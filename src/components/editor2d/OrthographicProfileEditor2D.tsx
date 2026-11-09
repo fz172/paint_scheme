@@ -18,7 +18,6 @@ export default function OrthographicProfileEditor2D() {
   const stripes = useLiveryStore((s) => s.stripes);
   const selectedStripeId = useLiveryStore((s) => s.selectedStripeId);
   const registration = useLiveryStore((s) => s.registration);
-  const decals = useLiveryStore((s) => s.decals);
 
   const setSelectedStripeId = useLiveryStore((s) => s.setSelectedStripeId);
   const updateStripe = useLiveryStore((s) => s.updateStripe);
@@ -30,10 +29,10 @@ export default function OrthographicProfileEditor2D() {
   const [viewSide, setViewSide] = useState<"PORT" | "STARBOARD">("PORT");
 
   const W = 1000;
-  const H = 320;
+  const H = 310;
   const padX = 70;
   const drawW = W - padX * 2;
-  const padY = 28;
+  const padY = 24;
   const drawH = H - padY * 2;
 
   const toSvg = (uNorm: number, vNorm: number) => ({
@@ -72,40 +71,24 @@ export default function OrthographicProfileEditor2D() {
     }
   };
 
-  // Build SVG path for the Sling TSi fuselage + swept vertical tail silhouette
+  // Authentic Sling 4 TSi POH Side Silhouette
   const buildAirframeSilhouettePath = () => {
     const pts: { x: number; y: number }[] = [];
     const steps = 64;
     for (let i = 0; i <= steps; i++) {
-      const t = (i / steps) * 0.76;
+      const t = (i / steps) * 0.78;
       const st = evaluateSlingFuselageStation(t);
-      pts.push(toSvg(0.05 + t * 0.88, 0.44 + st.yTop * 0.52));
+      pts.push(toSvg(0.06 + t * 0.88, 0.31 + st.yTop * 0.58));
     }
-    pts.push(toSvg(0.88, 0.96));
-    pts.push(toSvg(0.96, 0.96));
-    pts.push(toSvg(0.95, 0.44));
+    // Swept vertical stabilizer leading edge -> squared tip -> rudder TE
+    pts.push(toSvg(0.89, 0.98));
+    pts.push(toSvg(0.96, 0.98));
+    pts.push(toSvg(0.98, 0.28));
     for (let i = steps; i >= 0; i--) {
       const t = i / steps;
       const st = evaluateSlingFuselageStation(t);
-      pts.push(toSvg(0.05 + t * 0.88, 0.44 + st.yBottom * 0.52));
+      pts.push(toSvg(0.06 + t * 0.88, 0.31 + st.yBottom * 0.58));
     }
-    return (
-      pts
-        .map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
-        .join(" ") + " Z"
-    );
-  };
-
-  const buildCanopyGlassPath = () => {
-    const pts: { x: number; y: number }[] = [];
-    for (let i = 0; i <= 32; i++) {
-      const t = 0.225 + (i / 32) * 0.31;
-      const st = evaluateSlingFuselageStation(t);
-      pts.push(toSvg(0.05 + t * 0.88, 0.44 + st.yTop * 0.52 - 0.01));
-    }
-    pts.push(toSvg(0.05 + 0.535 * 0.88, 0.5));
-    pts.push(toSvg(0.05 + 0.38 * 0.88, 0.52));
-    pts.push(toSvg(0.05 + 0.225 * 0.88, 0.54));
     return (
       pts
         .map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
@@ -116,9 +99,29 @@ export default function OrthographicProfileEditor2D() {
   const buildRibbonSvgPath = (
     s: (typeof stripes)[number],
     offsetNorm = 0,
-    overrideW?: number
+    overrideW?: number,
+    forceRibbonOnly = false
   ) => {
     const steps = 48;
+
+    if (s.fillBelowCurve && !forceRibbonOnly && offsetNorm === 0) {
+      const pts: { x: number; y: number }[] = [];
+      pts.push(toSvg(0, s.p0.y));
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const pt = evalBezierPoint(s.p0, s.p1, s.p2, s.p3, t);
+        pts.push(toSvg(pt.x, pt.y));
+      }
+      pts.push(toSvg(1.0, s.p3.y));
+      pts.push(toSvg(1.0, 0.0));
+      pts.push(toSvg(0.0, 0.0));
+      return (
+        pts
+          .map((p, idx) => `${idx === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+          .join(" ") + " Z"
+      );
+    }
+
     const upper: { x: number; y: number }[] = [];
     const lower: { x: number; y: number }[] = [];
 
@@ -150,20 +153,18 @@ export default function OrthographicProfileEditor2D() {
   };
 
   const silhouetteD = buildAirframeSilhouettePath();
-  const canopyD = buildCanopyGlassPath();
   const activeStripe = stripes.find((s) => s.id === selectedStripeId) || null;
   const regPos = toSvg(registration.positionX, registration.positionY);
 
   return (
     <div className="w-full h-full flex flex-col bg-slate-950 border-t border-slate-800 select-none">
-      {/* Header Toolbar */}
       <div className="flex items-center justify-between px-4 py-1.5 bg-slate-900/90 border-b border-slate-800 text-xs">
         <div className="flex items-center gap-3">
           <span className="font-semibold text-slate-200 tracking-wide">
-            2D ORTHOGRAPHIC BEZIER & DATUM PROFILE EDITOR
+            2D ORTHOGRAPHIC BEZIER & DATUM PROFILE EDITOR (SLING 4 TSi POH)
           </span>
           <span className="text-slate-500 hidden md:inline">
-            Drag control points (P0–P3) or Registration badge to sculpt livery in real time
+            Drag control points (P0–P3) or N-Number (`{registration.text}`) to sculpt livery in real time
           </span>
         </div>
 
@@ -195,12 +196,11 @@ export default function OrthographicProfileEditor2D() {
         </div>
       </div>
 
-      {/* Interactive SVG Canvas */}
       <div className="relative flex-1 w-full overflow-hidden flex items-center justify-center bg-slate-950">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
-          className="w-full h-full max-h-[260px] touch-none cursor-crosshair"
+          className="w-full h-full max-h-[255px] touch-none cursor-crosshair"
           onPointerMove={handlePointerMove}
           onPointerUp={() => setDragTarget(null)}
           onPointerLeave={() => setDragTarget(null)}
@@ -224,16 +224,15 @@ export default function OrthographicProfileEditor2D() {
             </pattern>
           </defs>
 
-          {/* Engineering Grid */}
           <rect width={W} height={H} fill="url(#blueprint-grid)" />
 
-          {/* Datum Station Tick Marks along bottom */}
-          {[0, 1, 2, 3, 4, 5, 6, 7].map((meter) => {
-            const uNorm = 0.05 + (meter / calibration.lengthM) * 0.88;
-            if (uNorm > 0.96) return null;
+          {/* Datum Station Tick Marks in Millimetres along bottom */}
+          {[0, 1000, 2000, 3000, 4000, 5000, 6000, 7200].map((mm) => {
+            const uNorm = 0.02 + (mm / (calibration.lengthM * 1000)) * 0.94;
+            if (uNorm > 0.98) return null;
             const pt = toSvg(uNorm, 0.02);
             return (
-              <g key={meter}>
+              <g key={mm}>
                 <line
                   x1={pt.x}
                   y1={padY}
@@ -245,52 +244,22 @@ export default function OrthographicProfileEditor2D() {
                 />
                 <text
                   x={pt.x}
-                  y={H - 6}
+                  y={H - 5}
                   fill="#64748B"
-                  fontSize="10"
+                  fontSize="9.5"
                   textAnchor="middle"
                   fontFamily="monospace"
                 >
-                  STA {meter}.0m
+                  {mm}mm
                 </text>
               </g>
             );
           })}
 
-          {/* Clipped Airframe Interior Layers */}
           <g clipPath="url(#sling-fuselage-clip)">
-            {/* Base Fuselage Coat */}
             <path d={silhouetteD} fill={zones.fuselageBase.colorHex} />
 
-            {/* Vertical Tail Fin Coat */}
-            <polygon
-              points={[
-                toSvg(0.72, 0.5),
-                toSvg(0.87, 0.98),
-                toSvg(0.98, 0.98),
-                toSvg(0.96, 0.45),
-              ]
-                .map((p) => `${p.x},${p.y}`)
-                .join(" ")}
-              fill={zones.verticalTail.colorHex}
-            />
-
-            {/* Cowling Anti-Glare Panel */}
-            {calibration.antiGlareMaskEnabled && (
-              <polygon
-                points={[
-                  toSvg(0.05, 0.44),
-                  toSvg(0.24, 0.58),
-                  toSvg(0.24, 0.68),
-                  toSvg(0.05, 0.55),
-                ]
-                  .map((p) => `${p.x},${p.y}`)
-                  .join(" ")}
-                fill={zones.cowlingAntiGlare.colorHex}
-              />
-            )}
-
-            {/* Bezier Stripes */}
+            {/* Bezier Stripes & Belly/Tail Fills */}
             {stripes
               .filter((s) => s.visible && s.targetZone === "FUSELAGE_TAIL")
               .map((s) => (
@@ -312,7 +281,8 @@ export default function OrthographicProfileEditor2D() {
                       d={buildRibbonSvgPath(
                         s,
                         s.pinstripeOffset,
-                        s.pinstripeWidth
+                        s.pinstripeWidth,
+                        true
                       )}
                       fill={s.pinstripeColorHex}
                       opacity={s.opacity}
@@ -321,8 +291,49 @@ export default function OrthographicProfileEditor2D() {
                 </g>
               ))}
 
-            {/* Protected Bubble Canopy Glass */}
-            <path d={canopyD} fill="rgba(15, 23, 42, 0.76)" />
+            {/* 3 Distinct Sling 4 TSi Framed Windows (Windshield, Gullwing Door, Rear Quarter Window) */}
+            {/* 1. Wrap-around Windshield */}
+            <polygon
+              points={[
+                toSvg(0.23, 0.49),
+                toSvg(0.32, 0.67),
+                toSvg(0.33, 0.42),
+                toSvg(0.23, 0.44),
+              ]
+                .map((p) => `${p.x},${p.y}`)
+                .join(" ")}
+              fill="rgba(15, 23, 42, 0.82)"
+              stroke="#1E293B"
+              strokeWidth="1.5"
+            />
+            {/* 2. Gullwing Front Door Window */}
+            <polygon
+              points={[
+                toSvg(0.345, 0.66),
+                toSvg(0.445, 0.63),
+                toSvg(0.445, 0.42),
+                toSvg(0.345, 0.42),
+              ]
+                .map((p) => `${p.x},${p.y}`)
+                .join(" ")}
+              fill="rgba(15, 23, 42, 0.82)"
+              stroke="#1E293B"
+              strokeWidth="1.5"
+            />
+            {/* 3. Rear Passenger Quarter Window */}
+            <polygon
+              points={[
+                toSvg(0.465, 0.59),
+                toSvg(0.525, 0.53),
+                toSvg(0.525, 0.43),
+                toSvg(0.465, 0.43),
+              ]
+                .map((p) => `${p.x},${p.y}`)
+                .join(" ")}
+              fill="rgba(15, 23, 42, 0.82)"
+              stroke="#1E293B"
+              strokeWidth="1.5"
+            />
 
             {/* Registration N-Number */}
             {registration.enabled && (
@@ -357,7 +368,6 @@ export default function OrthographicProfileEditor2D() {
             )}
           </g>
 
-          {/* Crisp Silhouette Outline */}
           <path
             d={silhouetteD}
             fill="none"
@@ -368,7 +378,6 @@ export default function OrthographicProfileEditor2D() {
           {/* Interactive Bezier Handle Overlay for Active Stripe */}
           {activeStripe && activeStripe.targetZone === "FUSELAGE_TAIL" && (
             <g>
-              {/* Control polygon dashed guide lines */}
               {(() => {
                 const p0 = toSvg(activeStripe.p0.x, activeStripe.p0.y);
                 const p1 = toSvg(activeStripe.p1.x, activeStripe.p1.y);
@@ -401,7 +410,9 @@ export default function OrthographicProfileEditor2D() {
               {(["p0", "p1", "p2", "p3"] as const).map((ptKey, idx) => {
                 const pt = activeStripe[ptKey];
                 const svgPt = toSvg(pt.x, pt.y);
-                const stationM = (pt.x * calibration.lengthM).toFixed(2);
+                const stationMm = Math.round(
+                  pt.x * calibration.lengthM * 1000
+                );
                 return (
                   <g
                     key={ptKey}
@@ -433,7 +444,7 @@ export default function OrthographicProfileEditor2D() {
                       textAnchor="middle"
                       fontFamily="monospace"
                     >
-                      P{idx} ({stationM}m)
+                      P{idx} ({stationMm}mm)
                     </text>
                   </g>
                 );

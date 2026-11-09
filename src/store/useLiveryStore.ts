@@ -34,25 +34,13 @@ interface LiveryStoreState {
   isExportingPdf: boolean;
   textureRevision: number;
 
-  // 1. Sling TSi Calibration & Reconstruction State
   calibration: AirframeCalibration;
-
-  // 2. Paint Zones
   zones: LiverySchemePreset["zones"];
-
-  // 3. Vector Bezier Stripes
   stripes: BezierStripeLayer[];
-
-  // 4. Tail Registration (N-Number)
   registration: RegistrationConfig;
-
-  // 5. Custom Decals / Badges
   decals: CustomDecalLayer[];
-
-  // 6. AI Generated Concepts History
   aiConcepts: GeneratedAIConcept[];
 
-  // Actions
   setProjectName: (name: string) => void;
   setActiveWorkspaceTab: (tab: ActiveWorkspaceTab) => void;
   setSplit2DEditorOpen: (open: boolean) => void;
@@ -88,60 +76,69 @@ interface LiveryStoreState {
 const DEFAULT_PRESET = SLING_TSI_PRESETS[0];
 
 const DEFAULT_CALIBRATION: AirframeCalibration = {
-  aircraftName: "Sling TSi (Rotax 915iS / 916iS)",
-  wingspanM: 9.53,
-  lengthM: 7.175,
-  heightM: 2.45,
-  wingChordRootM: 1.42,
+  aircraftName: "Sling 4 TSi (POH Rev 3.5 Calibrated)",
+  wingspanM: 9.5, // POH: 9500 mm
+  lengthM: 7.2, // POH: 7200 mm
+  heightM: 2.35, // POH: 2350 mm
+  propThrustlineHeightM: 1.18, // POH: 1180 mm
+  noseAxleStationM: 0.9, // POH: 900 mm
+  wheelbaseM: 1.75, // POH: 1750 mm
+  wheelTrackM: 2.05, // POH: 2050 mm
+  wingLEStationM: 1.912, // POH: 1912 mm
+  wingChordRootM: 1.52, // POH: 1520 mm
   wingChordTipM: 1.02,
+  cabinWidthM: 1.188, // POH: 1188 mm
+  hStabSpanM: 3.095, // POH: 3095 mm
+  hStabChordM: 0.921, // POH: 921 mm
+  tailClearanceDeg: 14, // POH: 14 deg
   dihedralDeg: 4.5,
-  tailSweepDeg: 28,
+  tailSweepDeg: 31,
   wheelPantsInstalled: true,
   antiGlareMaskEnabled: true,
-  canopyTint: 0.35,
+  canopyTint: 0.38,
   propellerBlades: 3,
   showPanelLinesAndRivets: true,
   panelLineIntensity: 0.55,
   customBlueprintSideUrl: null,
   customBlueprintTopUrl: null,
-  referencePhotoUrls: [],
+  referencePhotoUrls: ["/references/sling-tsi-n532sl-ref.jpg"],
   customGlbUrl: null,
   rulers: [
     {
       id: "ruler-length",
-      label: "Overall Fuselage Length (Spinner Tip to Rudder Trailing Edge)",
+      label: "Overall Fuselage Length (7200 mm)",
       axis: "LENGTH",
-      p1: { x: 0.04, y: 0.48 },
-      p2: { x: 0.96, y: 0.48 },
-      measuredMeters: 7.175,
+      p1: { x: 0.166, y: 0.15 },
+      p2: { x: 0.818, y: 0.15 },
+      measuredMeters: 7.2,
     },
     {
       id: "ruler-height",
-      label: "Overall Height (Ground to Vertical Fin Tip)",
+      label: "Overall Tail Height (2350 mm)",
       axis: "HEIGHT",
-      p1: { x: 0.91, y: 0.12 },
-      p2: { x: 0.91, y: 0.92 },
-      measuredMeters: 2.45,
+      p1: { x: 0.865, y: 0.184 },
+      p2: { x: 0.865, y: 0.338 },
+      measuredMeters: 2.35,
     },
     {
       id: "ruler-span",
-      label: "Wingspan (Wingtip to Wingtip)",
+      label: "Total Wingspan (9500 mm)",
       axis: "WINGSPAN",
-      p1: { x: 0.05, y: 0.5 },
-      p2: { x: 0.95, y: 0.5 },
-      measuredMeters: 9.53,
+      p1: { x: 0.096, y: 0.481 },
+      p2: { x: 0.875, y: 0.481 },
+      measuredMeters: 9.5,
     },
   ],
 };
 
 export const useLiveryStore = create<LiveryStoreState>((set) => ({
-  projectName: "Sling TSi Custom Livery #01",
+  projectName: "Sling 4 TSi — N532SL Reference Livery",
   activeWorkspaceTab: "LIVERY_STUDIO",
   split2DEditorOpen: true,
-  environmentPreset: "HANGAR_STUDIO",
+  environmentPreset: "SUNNY_TARMAC",
   cameraPreset: "FREE_ORBIT",
   selectedStripeId: DEFAULT_PRESET.stripes[0]?.id ?? null,
-  activeSidePanel: "AI_COPILOT",
+  activeSidePanel: "PRESETS",
   isExportingPdf: false,
   textureRevision: 1,
 
@@ -150,34 +147,21 @@ export const useLiveryStore = create<LiveryStoreState>((set) => ({
   stripes: structuredClone(DEFAULT_PRESET.stripes),
   registration: {
     enabled: true,
-    text: DEFAULT_PRESET.registration.text ?? "N915TS",
+    text: DEFAULT_PRESET.registration.text ?? "N532SL",
     font: "AERO_ITALIC",
-    heightInches: DEFAULT_PRESET.registration.heightInches ?? 12.0,
+    heightInches: DEFAULT_PRESET.registration.heightInches ?? 11.5,
     slantDeg: DEFAULT_PRESET.registration.slantDeg ?? 14,
-    positionX: DEFAULT_PRESET.registration.positionX ?? 0.71,
-    positionY: DEFAULT_PRESET.registration.positionY ?? 0.53,
-    colorHex: DEFAULT_PRESET.registration.colorHex ?? "#0D2346",
-    paintCode: DEFAULT_PRESET.registration.paintCode ?? "AG-50192M",
+    positionX: DEFAULT_PRESET.registration.positionX ?? 0.67,
+    positionY: DEFAULT_PRESET.registration.positionY ?? 0.47,
+    colorHex: DEFAULT_PRESET.registration.colorHex ?? "#374151",
+    paintCode: DEFAULT_PRESET.registration.paintCode ?? "MK-7021M",
     outlineEnabled: DEFAULT_PRESET.registration.outlineEnabled ?? true,
-    outlineColorHex: DEFAULT_PRESET.registration.outlineColorHex ?? "#F96B13",
-    outlineWidth: 2.5,
+    outlineColorHex: DEFAULT_PRESET.registration.outlineColorHex ?? "#EA580C",
+    outlineWidth: 2.2,
     finish: "HIGH_GLOSS",
     symmetry: true,
   },
-  decals: [
-    {
-      id: "decal-sling-emblem",
-      name: "Sling TSi Tail Fin Badge",
-      visible: true,
-      type: "SLING_BADGE",
-      positionX: 0.89,
-      positionY: 0.76,
-      scale: 1.0,
-      rotationDeg: 0,
-      colorHex: "#F96B13",
-      symmetry: true,
-    },
-  ],
+  decals: [],
   aiConcepts: [],
 
   setProjectName: (projectName) => set({ projectName }),
@@ -222,21 +206,21 @@ export const useLiveryStore = create<LiveryStoreState>((set) => ({
         visible: true,
         targetZone,
         symmetry: true,
-        colorHex: "#F96B13",
-        paintCode: "SL-2040G",
+        colorHex: "#EA580C",
+        paintCode: "SL-2040M",
         colorName: "Sling Factory Blaze Orange",
-        finish: "HIGH_GLOSS" as AviationFinishType,
+        finish: "PEARLESCENT" as AviationFinishType,
         opacity: 1,
-        p0: { x: 0.1, y: 0.45 },
-        p1: { x: 0.38, y: 0.42 },
-        p2: { x: 0.68, y: 0.49 },
+        p0: { x: 0.1, y: 0.42 },
+        p1: { x: 0.38, y: 0.4 },
+        p2: { x: 0.68, y: 0.45 },
         p3: { x: 0.93, y: 0.78 },
-        widthStart: 0.016,
-        widthMid: 0.05,
-        widthEnd: 0.08,
+        widthStart: 0.014,
+        widthMid: 0.04,
+        widthEnd: 0.06,
         pinstripeEnabled: true,
-        pinstripeColorHex: "#0D2346",
-        pinstripeOffset: 0.038,
+        pinstripeColorHex: "#374151",
+        pinstripeOffset: 0.03,
         pinstripeWidth: 0.012,
       };
       return {
@@ -260,7 +244,9 @@ export const useLiveryStore = create<LiveryStoreState>((set) => ({
       return {
         stripes: next,
         selectedStripeId:
-          state.selectedStripeId === id ? (next[0]?.id ?? null) : state.selectedStripeId,
+          state.selectedStripeId === id
+            ? (next[0]?.id ?? null)
+            : state.selectedStripeId,
         textureRevision: state.textureRevision + 1,
       };
     }),
@@ -274,6 +260,7 @@ export const useLiveryStore = create<LiveryStoreState>((set) => ({
         ...structuredClone(target),
         id: copyId,
         name: `${target.name} (Copy)`,
+        fillBelowCurve: false,
         p0: { x: target.p0.x, y: Math.min(0.95, target.p0.y + 0.04) },
         p1: { x: target.p1.x, y: Math.min(0.95, target.p1.y + 0.04) },
         p2: { x: target.p2.x, y: Math.min(0.95, target.p2.y + 0.04) },

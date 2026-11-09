@@ -23,9 +23,6 @@ function finishToGrayHex(val: number): string {
   return `#${hex}${hex}${hex}`;
 }
 
-/**
- * Evaluates a cubic Bezier curve at parameter t in [0, 1]
- */
 export function evalBezierPoint(
   p0: { x: number; y: number },
   p1: { x: number; y: number },
@@ -46,9 +43,6 @@ export function evalBezierPoint(
   };
 }
 
-/**
- * Evaluates the unit normal vector perpendicular to a cubic Bezier curve at t in [0, 1]
- */
 export function evalBezierNormal(
   p0: { x: number; y: number },
   p1: { x: number; y: number },
@@ -70,16 +64,39 @@ export function evalBezierNormal(
 }
 
 /**
- * Draws a tapered variable-width Bezier ribbon polygon onto a 2D canvas context
+ * Traces either a tapered ribbon OR a lower-belly/rear-tail region fill below the Bezier curve
  */
 export function traceTaperedBezierRibbon(
   ctx: CanvasRenderingContext2D,
   stripe: BezierStripeLayer,
   mapCoord: (uNorm: number, vNorm: number) => { x: number; y: number },
   offsetNorm = 0,
-  overrideWidths?: { start: number; mid: number; end: number }
+  overrideWidths?: { start: number; mid: number; end: number },
+  forceRibbonOnly = false
 ) {
-  const steps = 64;
+  const steps = 68;
+
+  if (stripe.fillBelowCurve && !forceRibbonOnly && offsetNorm === 0) {
+    // Fill entire lower belly & rear rudder zone below and behind the Bezier curve (like N532SL!)
+    ctx.beginPath();
+    const first = mapCoord(0, stripe.p0.y);
+    ctx.moveTo(first.x, first.y);
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const pt = evalBezierPoint(stripe.p0, stripe.p1, stripe.p2, stripe.p3, t);
+      const mapped = mapCoord(pt.x, pt.y);
+      ctx.lineTo(mapped.x, mapped.y);
+    }
+    const rearTop = mapCoord(1.0, stripe.p3.y);
+    const rearBot = mapCoord(1.0, 0.0);
+    const frontBot = mapCoord(0.0, 0.0);
+    ctx.lineTo(rearTop.x, rearTop.y);
+    ctx.lineTo(rearBot.x, rearBot.y);
+    ctx.lineTo(frontBot.x, frontBot.y);
+    ctx.closePath();
+    return;
+  }
+
   const upperPts: { x: number; y: number }[] = [];
   const lowerPts: { x: number; y: number }[] = [];
 
@@ -98,7 +115,6 @@ export function traceTaperedBezierRibbon(
       t
     );
 
-    // Smooth quadratic width interpolation from start -> mid -> end
     const width =
       (1 - t) * (1 - t) * wStart +
       2 * (1 - t) * t * wMid +
@@ -125,10 +141,6 @@ export function traceTaperedBezierRibbon(
   ctx.closePath();
 }
 
-/**
- * Renders the 4K/2K Albedo, Roughness, Metalness, and Panel-Line Bump textures
- * for the Sling TSi airframe and wheel fairings.
- */
 export function renderCompositedLiveryTextures(
   calibration: AirframeCalibration,
   zones: LiverySchemePreset["zones"],
@@ -185,8 +197,6 @@ export function renderCompositedLiveryTextures(
     }
   );
 
-  // Helper that maps normalized side-profile coordinates (uNorm in [0,1], vNorm in [0,1])
-  // into either the Port half (isPort=true) or Starboard half (isPort=false) of the UV atlas
   const makeSideMapper =
     (isPort: boolean) => (uNorm: number, vNorm: number) => {
       const u = 0.02 + uNorm * 0.96;
@@ -200,15 +210,15 @@ export function renderCompositedLiveryTextures(
   const renderSideBand = (isPort: boolean) => {
     const mapCoord = makeSideMapper(isPort);
 
-    // 2. Vertical Tail Fin Base Zone (Swept polygon on rear upper empennage)
+    // 2. Vertical Tail Fin Base Zone
     fillAllChannels(
       zones.verticalTail.colorHex,
       zones.verticalTail.finish,
       (ctx) => {
-        const pRootLE = mapCoord(0.76, 0.52);
+        const pRootLE = mapCoord(0.76, 0.44);
         const pTipLE = mapCoord(0.87, 0.99);
         const pTipTE = mapCoord(0.99, 0.99);
-        const pRootTE = mapCoord(0.97, 0.46);
+        const pRootTE = mapCoord(0.98, 0.4);
         ctx.beginPath();
         ctx.moveTo(pRootLE.x, pRootLE.y);
         ctx.lineTo(pTipLE.x, pTipLE.y);
@@ -219,16 +229,20 @@ export function renderCompositedLiveryTextures(
       }
     );
 
-    // 3. Anti-Glare Upper Cowling Panel (in front of windshield, u in [0.05, 0.27], v > 0.49)
-    if (calibration.antiGlareMaskEnabled) {
+    // 3. Anti-Glare Upper Cowling Panel (only if distinct from fuselageBase)
+    if (
+      calibration.antiGlareMaskEnabled &&
+      zones.cowlingAntiGlare.colorHex.toLowerCase() !==
+        zones.fuselageBase.colorHex.toLowerCase()
+    ) {
       fillAllChannels(
         zones.cowlingAntiGlare.colorHex,
         zones.cowlingAntiGlare.finish,
         (ctx) => {
-          const p1 = mapCoord(0.05, 0.47);
-          const p2 = mapCoord(0.26, 0.56);
-          const p3 = mapCoord(0.26, 0.68);
-          const p4 = mapCoord(0.05, 0.56);
+          const p1 = mapCoord(0.05, 0.45);
+          const p2 = mapCoord(0.24, 0.54);
+          const p3 = mapCoord(0.24, 0.65);
+          const p4 = mapCoord(0.05, 0.55);
           ctx.beginPath();
           ctx.moveTo(p1.x, p1.y);
           ctx.lineTo(p2.x, p2.y);
@@ -240,7 +254,7 @@ export function renderCompositedLiveryTextures(
       );
     }
 
-    // 4. Render Bezier Vector Stripes & Secondary Pinstripes
+    // 4. Render Bezier Vector Stripes, Belly/Rudder Fills & Secondary Pinstripes
     for (const stripe of stripes) {
       if (!stripe.visible || stripe.targetZone !== "FUSELAGE_TAIL") continue;
       if (!isPort && !stripe.symmetry) continue;
@@ -260,10 +274,11 @@ export function renderCompositedLiveryTextures(
             mapCoord,
             stripe.pinstripeOffset,
             {
-              start: stripe.pinstripeWidth * 0.7,
+              start: stripe.pinstripeWidth * 0.75,
               mid: stripe.pinstripeWidth,
-              end: stripe.pinstripeWidth * 0.8,
-            }
+              end: stripe.pinstripeWidth * 0.85,
+            },
+            true
           );
           ctx.fill();
         });
@@ -271,13 +286,13 @@ export function renderCompositedLiveryTextures(
       ctxA.restore();
     }
 
-    // 5. Render Custom Badges / Emblems (e.g., Sling Tail Emblem)
+    // 5. Render Custom Badges / Emblems
     for (const decal of decals) {
       if (!decal.visible) continue;
       if (!isPort && !decal.symmetry) continue;
 
       const center = mapCoord(decal.positionX, decal.positionY);
-      const radiusPx = 0.026 * decal.scale * W;
+      const radiusPx = 0.024 * decal.scale * W;
 
       ctxA.save();
       ctxA.translate(center.x, center.y);
@@ -287,49 +302,54 @@ export function renderCompositedLiveryTextures(
       }
 
       if (decal.type === "SLING_BADGE") {
-        // Stylized aerodynamic Sling bird/wing emblem
         ctxA.fillStyle = decal.colorHex;
         ctxA.beginPath();
         ctxA.moveTo(-radiusPx * 1.2, radiusPx * 0.2);
-        ctxA.quadraticCurveTo(0, -radiusPx * 0.9, radiusPx * 1.3, -radiusPx * 0.4);
-        ctxA.quadraticCurveTo(radiusPx * 0.2, -radiusPx * 0.1, -radiusPx * 1.2, radiusPx * 0.2);
+        ctxA.quadraticCurveTo(
+          0,
+          -radiusPx * 0.9,
+          radiusPx * 1.3,
+          -radiusPx * 0.4
+        );
+        ctxA.quadraticCurveTo(
+          radiusPx * 0.2,
+          -radiusPx * 0.1,
+          -radiusPx * 1.2,
+          radiusPx * 0.2
+        );
         ctxA.fill();
 
         ctxA.beginPath();
         ctxA.moveTo(-radiusPx * 0.7, radiusPx * 0.55);
-        ctxA.quadraticCurveTo(radiusPx * 0.2, -radiusPx * 0.2, radiusPx * 1.0, radiusPx * 0.05);
-        ctxA.quadraticCurveTo(radiusPx * 0.1, radiusPx * 0.25, -radiusPx * 0.7, radiusPx * 0.55);
-        ctxA.fill();
-      } else if (decal.type === "STAR_INSIGNIA") {
-        ctxA.fillStyle = decal.colorHex;
-        ctxA.beginPath();
-        for (let k = 0; k < 5; k++) {
-          const a1 = (k * 4 * Math.PI) / 5 - Math.PI / 2;
-          const x = Math.cos(a1) * radiusPx;
-          const y = Math.sin(a1) * radiusPx;
-          if (k === 0) ctxA.moveTo(x, y);
-          else ctxA.lineTo(x, y);
-        }
-        ctxA.closePath();
+        ctxA.quadraticCurveTo(
+          radiusPx * 0.2,
+          -radiusPx * 0.2,
+          radiusPx * 1.0,
+          radiusPx * 0.05
+        );
+        ctxA.quadraticCurveTo(
+          radiusPx * 0.1,
+          radiusPx * 0.25,
+          -radiusPx * 0.7,
+          radiusPx * 0.55
+        );
         ctxA.fill();
       }
       ctxA.restore();
     }
 
     // 6. Render Symmetric Registration Number (N-Number)
-    // Port side reads Left->Right (+U), Starboard side is horizontally un-flipped so it ALSO reads Left->Right when viewed from the right side!
     if (registration.enabled && registration.text.trim().length > 0) {
       if (isPort || registration.symmetry) {
         const regCenter = mapCoord(
           registration.positionX,
           registration.positionY
         );
-        // Physical height scaling: aircraft heightM is mapped across 0.46 of atlas height
-        const heightMeters = (registration.heightInches || 12) * 0.0254;
-        const airframeHeightM = calibration.heightM || 2.45;
+        const heightMeters = (registration.heightInches || 11.5) * 0.0254;
+        const airframeHeightM = calibration.heightM || 2.35;
         const fontPx = Math.max(
           18,
-          Math.round((heightMeters / airframeHeightM) * 0.46 * H * 1.15)
+          Math.round((heightMeters / airframeHeightM) * 0.46 * H * 1.22)
         );
 
         const fontMap: Record<RegistrationConfig["font"], string> = {
@@ -347,10 +367,8 @@ export function renderCompositedLiveryTextures(
           ctx.save();
           ctx.translate(regCenter.x, regCenter.y);
           if (!isPort) {
-            // Mirror horizontally so Starboard text reads Left-to-Right from outside the aircraft
             ctx.scale(-1, 1);
           }
-          // Italic slant leans toward the tail on BOTH sides!
           const slantTan = Math.tan(
             (-(registration.slantDeg || 0) * Math.PI) / 180
           );
@@ -362,7 +380,10 @@ export function renderCompositedLiveryTextures(
 
           if (withOutline && registration.outlineEnabled) {
             ctx.strokeStyle = registration.outlineColorHex;
-            ctx.lineWidth = Math.max(2, (registration.outlineWidth || 2) * (W / 1024));
+            ctx.lineWidth = Math.max(
+              2,
+              (registration.outlineWidth || 2) * (W / 1024)
+            );
             ctx.lineJoin = "round";
             ctx.strokeText(registration.text.toUpperCase(), 0, 0);
           }
@@ -380,10 +401,10 @@ export function renderCompositedLiveryTextures(
     }
   };
 
-  renderSideBand(true); // Port (Left)
-  renderSideBand(false); // Starboard (Right)
+  renderSideBand(true);
+  renderSideBand(false);
 
-  // 7. Render Flush-Riveted Alclad Panel Seams, Doors, NACA Louvers & Rivet Lines
+  // 7. Render Flush-Riveted Alclad Panel Seams, Gullwing Door Outlines, NACA Duct & Cowling Gill Slot
   ctxB.fillStyle = "#808080";
   ctxB.fillRect(0, 0, W, H);
 
@@ -399,8 +420,8 @@ export function renderCompositedLiveryTextures(
       ctxA.strokeStyle = `rgba(15, 23, 42, ${0.18 * intensity})`;
       ctxA.lineWidth = Math.max(1.2, W / 1200);
 
-      // Vertical fuselage bulkheads / station seams (Firewall, Cabin Frame, Tailcone Stations)
-      const stationsU = [0.22, 0.37, 0.53, 0.64, 0.75, 0.85, 0.92];
+      // Vertical fuselage bulkheads (Firewall at 0.225, Door rear at 0.46, Tailcone stations)
+      const stationsU = [0.225, 0.34, 0.465, 0.56, 0.68, 0.78, 0.88];
       for (const u of stationsU) {
         const pTop = mapCoord(u, u > 0.78 ? 0.96 : 0.62);
         const pBot = mapCoord(u, 0.08);
@@ -412,40 +433,38 @@ export function renderCompositedLiveryTextures(
         }
       }
 
-      // Longitudinal skin lap seams
-      for (const vLine of [0.28, 0.41]) {
-        const pStart = mapCoord(0.22, vLine);
-        const pEnd = mapCoord(0.92, vLine + 0.06);
-        for (const c of [ctxB, ctxA]) {
-          c.beginPath();
-          c.moveTo(pStart.x, pStart.y);
-          c.lineTo(pEnd.x, pEnd.y);
-          c.stroke();
-        }
-      }
-
-      // Rudder hinge seam on vertical tail
-      const rTop = mapCoord(0.93, 0.98);
-      const rBot = mapCoord(0.9, 0.48);
+      // Rudder hinge seam on vertical tail (matches POH Page 1 rudder line!)
+      const rTop = mapCoord(0.89, 0.96);
+      const rMid = mapCoord(0.92, 0.96);
+      const rBot = mapCoord(0.88, 0.36);
       for (const c of [ctxB, ctxA]) {
         c.beginPath();
         c.moveTo(rTop.x, rTop.y);
+        c.lineTo(rMid.x, rMid.y);
         c.lineTo(rBot.x, rBot.y);
         c.stroke();
       }
 
-      // Cowling NACA cooling duct & exhaust louver detail
-      const naca = mapCoord(0.14, 0.39);
-      ctxA.fillStyle = `rgba(15, 23, 42, ${0.45 * intensity})`;
+      // Triangular NACA side cabin ventilation duct on forward fuselage (visible in N532SL photo!)
+      const naca = mapCoord(0.295, 0.41);
+      ctxA.fillStyle = `rgba(15, 23, 42, ${0.55 * intensity})`;
       ctxA.beginPath();
-      ctxA.ellipse(naca.x, naca.y, W * 0.014, H * 0.005, 0, 0, Math.PI * 2);
+      ctxA.moveTo(naca.x - W * 0.01, naca.y);
+      ctxA.lineTo(naca.x + W * 0.008, naca.y - H * 0.006);
+      ctxA.lineTo(naca.x + W * 0.008, naca.y + H * 0.006);
+      ctxA.closePath();
       ctxA.fill();
+
+      // Lower cowling air outlet gill slot (visible in N532SL photo!)
+      const gill = mapCoord(0.195, 0.28);
+      ctxA.fillStyle = `rgba(15, 23, 42, ${0.72 * intensity})`;
+      ctxA.fillRect(gill.x - W * 0.006, gill.y - H * 0.012, W * 0.011, H * 0.022);
 
       ctxA.restore();
     }
   }
 
-  // 8. Render Wheel Pants (Spats) Texture
+  // 8. Render Two-Tone Wheel Pants (Spats) Texture (Upper Orange + Charcoal/White Stripe + Lower White, like N532SL!)
   const spatCanvas = document.createElement("canvas");
   spatCanvas.width = 512;
   spatCanvas.height = 512;
@@ -460,7 +479,9 @@ export function renderCompositedLiveryTextures(
       ctxSpat,
       stripe,
       (u, v) => ({ x: u * 512, y: (1 - v) * 512 }),
-      0
+      0,
+      undefined,
+      true
     );
     ctxSpat.fill();
 
@@ -475,7 +496,8 @@ export function renderCompositedLiveryTextures(
           start: stripe.pinstripeWidth,
           mid: stripe.pinstripeWidth,
           end: stripe.pinstripeWidth,
-        }
+        },
+        true
       );
       ctxSpat.fill();
     }

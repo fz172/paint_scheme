@@ -119,19 +119,18 @@ export default function SlingTsiViewport3D({
   const spinPropRef = useRef<boolean>(false);
   const [spinPropeller, setSpinPropeller] = useState(false);
   const [showDimensions, setShowDimensions] = useState(true);
+  const [showRefPhotoPip, setShowRefPhotoPip] = useState(true);
   const [hoverStation, setHoverStation] = useState<{
     xM: number;
     yM: number;
     zM: number;
   } | null>(null);
 
-  // Build parametric Sling TSi geometry whenever calibration changes
   const meshParts = useMemo(
     () => buildSlingTsiGeometry(calibration),
     [calibration]
   );
 
-  // Render composite 2K PBR textures whenever livery layers or calibration change
   const textures = useMemo(() => {
     void textureRevision;
     return renderCompositedLiveryTextures(
@@ -144,7 +143,6 @@ export default function SlingTsiViewport3D({
     );
   }, [calibration, zones, stripes, registration, decals, textureRevision]);
 
-  // 1. Initialize Three.js WebGLRenderer, PMREM Studio Environment, Lights & OrbitControls
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -153,11 +151,12 @@ export default function SlingTsiViewport3D({
     const height = container.clientHeight || 600;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#0B1120");
+    scene.background = new THREE.Color("#0F172A");
     sceneRef.current = scene;
 
-    const camera = new THREE.PerspectiveCamera(36, width / height, 0.1, 120);
-    camera.position.set(-5.2, 2.1, 6.4);
+    // Camera positioned at the exact front-left 3/4 angle of the N532SL reference photo!
+    const camera = new THREE.PerspectiveCamera(32, width / height, 0.1, 120);
+    camera.position.set(-5.8, 0.72, 6.4);
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({
@@ -170,10 +169,9 @@ export default function SlingTsiViewport3D({
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.15;
+    renderer.toneMappingExposure = 1.2;
     rendererRef.current = renderer;
 
-    // Clear any existing canvas and mount
     container.innerHTML = "";
     container.appendChild(renderer.domElement);
 
@@ -181,18 +179,16 @@ export default function SlingTsiViewport3D({
       onCanvasReady(renderer.domElement);
     }
 
-    // Generate offline-ready procedural studio reflection environment map (RoomEnvironment)
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
     pmremGenerator.compileEquirectangularShader();
     const envTex = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.environment = envTex;
 
-    // Studio & Hangar Lights
-    const ambientLight = new THREE.AmbientLight("#E2E8F0", 0.85);
+    const ambientLight = new THREE.AmbientLight("#F8FAFC", 1.0);
     scene.add(ambientLight);
     ambientLightRef.current = ambientLight;
 
-    const keyLight = new THREE.DirectionalLight("#FFFFFF", 2.6);
+    const keyLight = new THREE.DirectionalLight("#FFFFFF", 3.0);
     keyLight.position.set(-6, 9, 7);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.set(2048, 2048);
@@ -207,49 +203,44 @@ export default function SlingTsiViewport3D({
     scene.add(keyLight);
     keyLightRef.current = keyLight;
 
-    const fillLight = new THREE.DirectionalLight("#93C5FD", 1.25);
+    const fillLight = new THREE.DirectionalLight("#93C5FD", 1.35);
     fillLight.position.set(7, 5, -6);
     scene.add(fillLight);
     fillLightRef.current = fillLight;
 
-    const rimLight = new THREE.DirectionalLight("#E2E8F0", 0.9);
+    const rimLight = new THREE.DirectionalLight("#E2E8F0", 1.0);
     rimLight.position.set(2, -4, 5);
     scene.add(rimLight);
     rimLightRef.current = rimLight;
 
-    // Hangar Floor Reference Grid
     const grid = new THREE.GridHelper(24, 24, "#334155", "#1E293B");
-    grid.position.y = -1.1;
+    grid.position.y = -1.18;
     scene.add(grid);
     gridHelperRef.current = grid;
 
-    // Soft Shadow Receiver Floor Plane
     const shadowGeo = new THREE.PlaneGeometry(24, 24);
     shadowGeo.rotateX(-Math.PI / 2);
-    const shadowMat = new THREE.ShadowMaterial({ opacity: 0.42 });
+    const shadowMat = new THREE.ShadowMaterial({ opacity: 0.45 });
     const shadowPlane = new THREE.Mesh(shadowGeo, shadowMat);
-    shadowPlane.position.y = -1.095;
+    shadowPlane.position.y = -1.175;
     shadowPlane.receiveShadow = true;
     scene.add(shadowPlane);
     shadowPlaneRef.current = shadowPlane;
 
-    // Aircraft Root Group
     const aircraftGroup = new THREE.Group();
     scene.add(aircraftGroup);
     aircraftGroupRef.current = aircraftGroup;
 
-    // OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.07;
     controls.minDistance = 2.2;
     controls.maxDistance = 24;
     controls.maxPolarAngle = Math.PI * 0.85;
-    controls.target.set(0, 0, 0);
+    controls.target.set(-0.2, -0.08, 0);
     controls.update();
     controlsRef.current = controls;
 
-    // Animation Loop
     let animFrameId = 0;
     const clock = new THREE.Clock();
 
@@ -264,7 +255,6 @@ export default function SlingTsiViewport3D({
     };
     animate();
 
-    // ResizeObserver for responsive container sizing
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const w = entry.contentRect.width;
@@ -288,12 +278,10 @@ export default function SlingTsiViewport3D({
     };
   }, [onCanvasReady]);
 
-  // 2. Rebuild / Update Aircraft Meshes & PBR Materials when geometry, zones, or textures change
   useEffect(() => {
     const group = aircraftGroupRef.current;
     if (!group) return;
 
-    // Clear previous meshes cleanly
     while (group.children.length > 0) {
       const child = group.children[0] as THREE.Mesh;
       if (child.material) {
@@ -309,23 +297,23 @@ export default function SlingTsiViewport3D({
     const wingFinish =
       FINISH_PRESETS[zones.wingBase.finish] || FINISH_PRESETS.HIGH_GLOSS;
     const wingtipFinish =
-      FINISH_PRESETS[zones.wingtips.finish] || FINISH_PRESETS.HIGH_GLOSS;
+      FINISH_PRESETS[zones.wingtips.finish] || FINISH_PRESETS.PEARLESCENT;
     const spatFinish =
       FINISH_PRESETS[zones.wheelPants.finish] || FINISH_PRESETS.HIGH_GLOSS;
     const spinnerFinish =
-      FINISH_PRESETS[zones.spinner.finish] || FINISH_PRESETS.POLISHED_CHROME;
+      FINISH_PRESETS[zones.spinner.finish] || FINISH_PRESETS.HIGH_GLOSS;
 
-    // 1. Fuselage + Swept Vertical Tail + Dorsal Fin
+    // 1. Fuselage + Swept Vertical Tail + Dorsal Fin + Wing Root Fillets
     const fusMat = new THREE.MeshPhysicalMaterial({
       map: textures.fuselageAlbedo,
       roughnessMap: textures.fuselageRoughness,
       metalnessMap: textures.fuselageMetalness,
       bumpMap: textures.fuselageBump,
-      bumpScale: calibration.showPanelLinesAndRivets ? 0.006 : 0,
+      bumpScale: calibration.showPanelLinesAndRivets ? 0.005 : 0,
       roughness: 1.0,
       metalness: 1.0,
-      clearcoat: 0.95,
-      clearcoatRoughness: 0.04,
+      clearcoat: 0.96,
+      clearcoatRoughness: 0.03,
       envMapIntensity: 1.35,
     });
     const fusMesh = new THREE.Mesh(meshParts.fuselageAndTailGeo, fusMat);
@@ -334,16 +322,16 @@ export default function SlingTsiViewport3D({
     fusMesh.name = "fuselage";
     group.add(fusMesh);
 
-    // 2. Protected Bubble Canopy Glass
+    // 2. 3 Framed Cabin Windows (Wrap-around Windshield, Gullwing Door Windows, Rear Quarter Windows)
     const glassMat = new THREE.MeshPhysicalMaterial({
       color: new THREE.Color("#1E293B"),
       transparent: true,
-      opacity: 0.42 + calibration.canopyTint * 0.45,
-      roughness: 0.04,
-      metalness: 0.12,
+      opacity: 0.55 + calibration.canopyTint * 0.35,
+      roughness: 0.03,
+      metalness: 0.15,
       clearcoat: 1.0,
       clearcoatRoughness: 0.02,
-      envMapIntensity: 1.8,
+      envMapIntensity: 2.0,
       side: THREE.DoubleSide,
     });
     const glassMesh = new THREE.Mesh(meshParts.canopyGlassGeo, glassMat);
@@ -365,7 +353,7 @@ export default function SlingTsiViewport3D({
     wingMesh.name = "wingMain";
     group.add(wingMesh);
 
-    // 4. Swept Upturned Composite Wingtips
+    // 4. Swept Curved Winglets + Horizontal Stabilizer Raked Tips
     const wingtipMat = new THREE.MeshPhysicalMaterial({
       color: new THREE.Color(zones.wingtips.colorHex),
       roughness: wingtipFinish.roughness,
@@ -390,7 +378,7 @@ export default function SlingTsiViewport3D({
     hStabMesh.name = "horizontalStab";
     group.add(hStabMesh);
 
-    // 6. Aerodynamic Teardrop Wheel Pants (Spats)
+    // 6. Sculpted Two-Tone Wheel Pants (Spats)
     if (calibration.wheelPantsInstalled) {
       const spatMat = new THREE.MeshPhysicalMaterial({
         map: textures.wheelPantsAlbedo,
@@ -407,24 +395,44 @@ export default function SlingTsiViewport3D({
       group.add(spatMesh);
     }
 
-    // 7. Spinner Cone
+    // 6b. Painted Aerodynamic Gear Legs (matches lower belly / wingtips color like N532SL!)
+    const bellyOrWingtipColor =
+      stripes.find((s) => s.visible && s.fillBelowCurve)?.colorHex ||
+      zones.wingtips.colorHex;
+    const gearLegsMat = new THREE.MeshPhysicalMaterial({
+      color: new THREE.Color(bellyOrWingtipColor),
+      roughness: wingtipFinish.roughness,
+      metalness: wingtipFinish.metalness,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.04,
+      envMapIntensity: 1.3,
+    });
+    const gearLegsMesh = new THREE.Mesh(
+      meshParts.gearLegsPaintedGeo,
+      gearLegsMat
+    );
+    gearLegsMesh.castShadow = true;
+    gearLegsMesh.name = "gearLegsPainted";
+    group.add(gearLegsMesh);
+
+    // 7. Ogive Bullet Spinner Cone
     const spinnerMat = new THREE.MeshPhysicalMaterial({
       color: new THREE.Color(zones.spinner.colorHex),
       roughness: spinnerFinish.roughness,
       metalness: spinnerFinish.metalness,
       clearcoat: spinnerFinish.clearcoat,
       clearcoatRoughness: spinnerFinish.clearcoatRoughness,
-      envMapIntensity: 1.6,
+      envMapIntensity: 1.5,
     });
     const spinnerMesh = new THREE.Mesh(meshParts.spinnerGeo, spinnerMat);
     spinnerMesh.castShadow = true;
     spinnerMesh.name = "spinner";
     group.add(spinnerMesh);
 
-    // 8. Protected 3-Blade Propeller
+    // 8. Protected 3-Blade Scimitar Propeller
     const propMat = new THREE.MeshStandardMaterial({
       color: new THREE.Color("#18181B"),
-      roughness: 0.35,
+      roughness: 0.32,
       metalness: 0.25,
     });
     const propMesh = new THREE.Mesh(meshParts.propellerBladesGeo, propMat);
@@ -433,11 +441,11 @@ export default function SlingTsiViewport3D({
     propMeshRef.current = propMesh;
     group.add(propMesh);
 
-    // 9. Protected Landing Gear Struts & Tires
+    // 9. Tires, Twin Cowling Air Intake Openings & Whip Antenna
     const gearMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color("#1E293B"),
-      roughness: 0.75,
-      metalness: 0.2,
+      color: new THREE.Color("#18181B"),
+      roughness: 0.78,
+      metalness: 0.15,
     });
     const gearMesh = new THREE.Mesh(meshParts.gearStrutsAndTiresGeo, gearMat);
     gearMesh.castShadow = true;
@@ -457,16 +465,14 @@ export default function SlingTsiViewport3D({
     interiorMesh.name = "interior";
     group.add(interiorMesh);
 
-    // Align floor grid and shadow plane to aircraft ground level
-    const groundY = meshParts.bounds.yMin - 0.02;
+    const groundY = meshParts.bounds.yMin;
     if (gridHelperRef.current) gridHelperRef.current.position.y = groundY;
     if (shadowPlaneRef.current)
-      shadowPlaneRef.current.position.y = groundY + 0.005;
-  }, [meshParts, textures, zones, calibration]);
+      shadowPlaneRef.current.position.y = groundY + 0.004;
+  }, [meshParts, textures, zones, stripes, calibration]);
 
-  // 3. Update Environment Lighting Preset
   useEffect(() => {
-    const env = ENV_CONFIG[environmentPreset] || ENV_CONFIG.HANGAR_STUDIO;
+    const env = ENV_CONFIG[environmentPreset] || ENV_CONFIG.SUNNY_TARMAC;
     if (sceneRef.current) {
       sceneRef.current.background = new THREE.Color(env.bg);
     }
@@ -491,37 +497,41 @@ export default function SlingTsiViewport3D({
     }
   }, [environmentPreset]);
 
-  // 4. Update Camera View Preset
   useEffect(() => {
     const camera = cameraRef.current;
     const controls = controlsRef.current;
     if (!camera || !controls) return;
 
-    const target = new THREE.Vector3(0, 0, 0);
-    let pos = new THREE.Vector3(-4.8, 2.2, 6.8);
+    const target = new THREE.Vector3(-0.2, -0.08, 0);
+    let pos = new THREE.Vector3(-5.8, 0.72, 6.4);
 
     switch (cameraPreset) {
       case "HERO_3_4":
-        pos = new THREE.Vector3(-5.2, 2.1, 6.4);
+        pos = new THREE.Vector3(-5.8, 0.72, 6.4);
         break;
       case "LEFT_PROFILE":
-        pos = new THREE.Vector3(0, 0.2, 9.2);
+        pos = new THREE.Vector3(0, 0.05, 9.6);
+        target.set(0, 0.05, 0);
         break;
       case "RIGHT_PROFILE":
-        pos = new THREE.Vector3(0, 0.2, -9.2);
+        pos = new THREE.Vector3(0, 0.05, -9.6);
+        target.set(0, 0.05, 0);
         break;
       case "TOP_PLANFORM":
-        pos = new THREE.Vector3(0, 10.5, 0.01);
+        pos = new THREE.Vector3(0, 10.8, 0.01);
+        target.set(0, 0, 0);
         break;
       case "BOTTOM_VIEW":
-        pos = new THREE.Vector3(0, -10.5, 0.01);
+        pos = new THREE.Vector3(0, -10.8, 0.01);
+        target.set(0, 0, 0);
         break;
       case "FRONT_VIEW":
-        pos = new THREE.Vector3(-8.8, 0.4, 0);
+        pos = new THREE.Vector3(-9.2, 0.1, 0);
+        target.set(0, 0, 0);
         break;
       case "TAIL_CLOSEUP":
-        pos = new THREE.Vector3(2.4, 0.65, 3.6);
-        target.set(2.0, 0.35, 0);
+        pos = new THREE.Vector3(2.2, 0.55, 3.8);
+        target.set(1.8, 0.25, 0);
         break;
       case "FREE_ORBIT":
       default:
@@ -533,7 +543,6 @@ export default function SlingTsiViewport3D({
     controls.update();
   }, [cameraPreset]);
 
-  // 5. Raycast on Pointer Move to display real-time Datum Station (X, Y, Z) in meters/inches
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const container = containerRef.current;
     const camera = cameraRef.current;
@@ -566,16 +575,20 @@ export default function SlingTsiViewport3D({
     setSpinPropeller(spinPropRef.current);
   };
 
+  const activeRefPhoto =
+    calibration.referencePhotoUrls[
+      calibration.referencePhotoUrls.length - 1
+    ] || null;
+
   return (
     <div
       className="relative w-full h-full select-none overflow-hidden bg-slate-950"
       onPointerMove={handlePointerMove}
       onPointerLeave={() => setHoverStation(null)}
     >
-      {/* Pure Three.js WebGL Mount Container */}
       <div ref={containerRef} className="w-full h-full" />
 
-      {/* Top-Left Live Datum & Dimension HUD */}
+      {/* Top-Left Live POH Datum & Dimension HUD */}
       <div className="absolute top-3 left-3 flex flex-col gap-1.5 pointer-events-none">
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/85 backdrop-blur-md border border-slate-700/80 text-xs text-slate-200 shadow-lg">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -584,35 +597,61 @@ export default function SlingTsiViewport3D({
           </span>
           <span className="text-slate-400">|</span>
           <span className="font-mono text-[11px] text-sky-400">
-            {calibration.wingspanM}m × {calibration.lengthM}m ×{" "}
-            {calibration.heightM}m
+            {(calibration.wingspanM * 1000).toFixed(0)}mm Span ×{" "}
+            {(calibration.lengthM * 1000).toFixed(0)}mm Len ×{" "}
+            {(calibration.heightM * 1000).toFixed(0)}mm Ht
           </span>
         </div>
 
         {hoverStation && (
           <div className="px-3 py-1 rounded-md bg-slate-950/90 border border-sky-500/40 font-mono text-[11px] text-sky-300 shadow">
-            Datum Station X: {hoverStation.xM.toFixed(2)}m (
-            {(hoverStation.xM * 39.3701).toFixed(1)}&quot;) | WL Y:{" "}
-            {hoverStation.yM.toFixed(2)}m | BL Z: {hoverStation.zM.toFixed(2)}m
+            STA X: {(hoverStation.xM * 1000).toFixed(0)}mm (
+            {hoverStation.xM.toFixed(2)}m) | WL Y:{" "}
+            {(hoverStation.yM * 1000).toFixed(0)}mm | BL Z:{" "}
+            {(hoverStation.zM * 1000).toFixed(0)}mm
           </div>
         )}
       </div>
 
-      {/* Top-Right Dimension Callout Pills */}
+      {/* Top-Right POH Dimension Callout Pills */}
       {showDimensions && (
         <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5 pointer-events-none">
           <div className="px-2.5 py-1 rounded bg-slate-900/85 border border-amber-500/40 text-[11px] font-mono text-amber-300 shadow">
-            Wingspan: {calibration.wingspanM.toFixed(2)}m (
-            {(calibration.wingspanM * 3.28084).toFixed(2)}ft)
+            Span: {(calibration.wingspanM * 1000).toFixed(0)} mm (
+            {calibration.wingspanM.toFixed(2)} m)
           </div>
           <div className="px-2.5 py-1 rounded bg-slate-900/85 border border-sky-500/40 text-[11px] font-mono text-sky-300 shadow">
-            Length: {calibration.lengthM.toFixed(3)}m (
-            {(calibration.lengthM * 3.28084).toFixed(2)}ft)
+            Length: {(calibration.lengthM * 1000).toFixed(0)} mm | Wheelbase:{" "}
+            {((calibration.noseAxleStationM || 0.9) * 1000).toFixed(0)}+
+            {((calibration.wheelbaseM || 1.75) * 1000).toFixed(0)} mm
           </div>
           <div className="px-2.5 py-1 rounded bg-slate-900/85 border border-emerald-500/40 text-[11px] font-mono text-emerald-300 shadow">
-            Tail Height: {calibration.heightM.toFixed(2)}m | Reg:{" "}
-            {registration.text} ({registration.heightInches}&quot;)
+            Height: {(calibration.heightM * 1000).toFixed(0)} mm | Track:{" "}
+            {((calibration.wheelTrackM || 2.05) * 1000).toFixed(0)} mm | Reg:{" "}
+            {registration.text}
           </div>
+        </div>
+      )}
+
+      {/* Bottom-Right Reference Photo Comparison PiP */}
+      {showRefPhotoPip && activeRefPhoto && (
+        <div className="absolute bottom-3 right-3 w-56 rounded-xl overflow-hidden bg-slate-900/95 border border-slate-700 shadow-2xl">
+          <div className="flex items-center justify-between px-2.5 py-1 bg-slate-950/90 border-b border-slate-800 text-[10px] text-slate-300">
+            <span className="font-semibold">Reference Photo (N532SL)</span>
+            <button
+              type="button"
+              onClick={() => setShowRefPhotoPip(false)}
+              className="text-slate-400 hover:text-white"
+            >
+              ✕
+            </button>
+          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={activeRefPhoto}
+            alt="Reference Aircraft"
+            className="w-full h-32 object-cover"
+          />
         </div>
       )}
 
@@ -627,7 +666,19 @@ export default function SlingTsiViewport3D({
               : "bg-slate-900/80 border-slate-700 text-slate-400 hover:text-slate-200"
           }`}
         >
-          {showDimensions ? "✓ Dimensions HUD" : "Dimensions Off"}
+          {showDimensions ? "✓ POH Dimensions" : "Dimensions Off"}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowRefPhotoPip((v) => !v)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
+            showRefPhotoPip
+              ? "bg-emerald-500/20 border-emerald-500/60 text-emerald-300"
+              : "bg-slate-900/80 border-slate-700 text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          {showRefPhotoPip ? "✓ Ref Photo PiP" : "Show Ref Photo"}
         </button>
 
         <button
@@ -641,10 +692,6 @@ export default function SlingTsiViewport3D({
         >
           {spinPropeller ? "⟳ Prop Spinning" : "Prop Static"}
         </button>
-
-        <div className="px-2.5 py-1.5 rounded-lg bg-slate-900/75 border border-slate-800 text-[11px] text-slate-400 hidden md:block">
-          Drag to orbit • Right-drag to pan • Scroll to zoom
-        </div>
       </div>
     </div>
   );

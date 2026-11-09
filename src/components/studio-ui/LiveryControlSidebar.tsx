@@ -747,22 +747,40 @@ export default function LiveryControlSidebar() {
                   )}
                 </div>
 
-                {/* Bilateral Symmetry Toggle */}
-                <label className="flex items-center justify-between text-xs pt-2 border-t border-slate-800 cursor-pointer">
-                  <span className="text-slate-300">
-                    Mirror Port ↔ Starboard Symmetry
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={activeStripe.symmetry}
-                    onChange={(e) =>
-                      updateStripe(activeStripe.id, {
-                        symmetry: e.target.checked,
-                      })
-                    }
-                    className="rounded accent-sky-500 w-4 h-4"
-                  />
-                </label>
+                {/* Bilateral Symmetry & Lower Belly Fill Toggles */}
+                <div className="space-y-2 pt-2 border-t border-slate-800">
+                  <label className="flex items-center justify-between text-xs cursor-pointer">
+                    <span className="text-slate-300 font-medium">
+                      Fill Lower Belly & Rear Tail Below Curve (N532SL Style)
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(activeStripe.fillBelowCurve)}
+                      onChange={(e) =>
+                        updateStripe(activeStripe.id, {
+                          fillBelowCurve: e.target.checked,
+                        })
+                      }
+                      className="rounded accent-sky-500 w-4 h-4"
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between text-xs cursor-pointer">
+                    <span className="text-slate-300">
+                      Mirror Port ↔ Starboard Symmetry
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={activeStripe.symmetry}
+                      onChange={(e) =>
+                        updateStripe(activeStripe.id, {
+                          symmetry: e.target.checked,
+                        })
+                      }
+                      className="rounded accent-sky-500 w-4 h-4"
+                    />
+                  </label>
+                </div>
               </div>
             )}
           </div>
