@@ -77,9 +77,10 @@ export function traceTaperedBezierRibbon(
   const steps = 68;
 
   if (stripe.fillBelowCurve && !forceRibbonOnly && offsetNorm === 0) {
-    // Fill entire lower belly & rear rudder zone below and behind the Bezier curve (like N532SL!)
+    // Fill lower belly or rear rudder zone below and behind the Bezier curve
+    const startX = stripe.p0.x > 0.45 ? stripe.p0.x : 0.0;
     ctx.beginPath();
-    const first = mapCoord(0, stripe.p0.y);
+    const first = mapCoord(startX, stripe.p0.y);
     ctx.moveTo(first.x, first.y);
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
@@ -89,7 +90,7 @@ export function traceTaperedBezierRibbon(
     }
     const rearTop = mapCoord(1.0, stripe.p3.y);
     const rearBot = mapCoord(1.0, 0.0);
-    const frontBot = mapCoord(0.0, 0.0);
+    const frontBot = mapCoord(startX, 0.0);
     ctx.lineTo(rearTop.x, rearTop.y);
     ctx.lineTo(rearBot.x, rearBot.y);
     ctx.lineTo(frontBot.x, frontBot.y);
@@ -404,7 +405,147 @@ export function renderCompositedLiveryTextures(
   renderSideBand(true);
   renderSideBand(false);
 
-  // 7. Render Flush-Riveted Alclad Panel Seams, Gullwing Door Outlines, NACA Duct & Cowling Gill Slot
+  // 6b. Render the 3 Signature Sling 4 TSi Smoked Acrylic Cabin Windows
+  // (1: One-piece Wrap-Around Windshield, 2: Gullwing Side Door Window, 3: Rear Passenger Quarter Window)
+  // Painted A-pillar, B-pillar, and roof centerline spine remain in the fuselage paint scheme!
+  const drawSlingCabinWindows = (isPort: boolean) => {
+    const mapCoord = makeSideMapper(isPort);
+
+    const traceWindshield = (ctx: CanvasRenderingContext2D) => {
+      const p0 = mapCoord(0.233, 0.495);
+      const c1 = mapCoord(0.265, 0.625);
+      const c2 = mapCoord(0.305, 0.725);
+      const pTop = mapCoord(0.34, 0.73);
+      const pBotRear = mapCoord(0.348, 0.415);
+      const c3 = mapCoord(0.305, 0.415);
+      const c4 = mapCoord(0.265, 0.445);
+
+      ctx.beginPath();
+      ctx.moveTo(p0.x, p0.y);
+      ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, pTop.x, pTop.y);
+      ctx.lineTo(pBotRear.x, pBotRear.y);
+      ctx.bezierCurveTo(c3.x, c3.y, c4.x, c4.y, p0.x, p0.y);
+      ctx.closePath();
+    };
+
+    const traceGullwingDoorWindow = (ctx: CanvasRenderingContext2D) => {
+      const pBotFront = mapCoord(0.364, 0.415);
+      const pTopFront = mapCoord(0.356, 0.642);
+      const cTop1 = mapCoord(0.388, 0.662);
+      const cTop2 = mapCoord(0.432, 0.638);
+      const pTopRear = mapCoord(0.464, 0.595);
+      const pBotRear = mapCoord(0.46, 0.422);
+      const cBot1 = mapCoord(0.425, 0.416);
+      const cBot2 = mapCoord(0.39, 0.414);
+
+      ctx.beginPath();
+      ctx.moveTo(pBotFront.x, pBotFront.y);
+      ctx.lineTo(pTopFront.x, pTopFront.y);
+      ctx.bezierCurveTo(
+        cTop1.x,
+        cTop1.y,
+        cTop2.x,
+        cTop2.y,
+        pTopRear.x,
+        pTopRear.y
+      );
+      ctx.lineTo(pBotRear.x, pBotRear.y);
+      ctx.bezierCurveTo(
+        cBot1.x,
+        cBot1.y,
+        cBot2.x,
+        cBot2.y,
+        pBotFront.x,
+        pBotFront.y
+      );
+      ctx.closePath();
+    };
+
+    const traceRearQuarterWindow = (ctx: CanvasRenderingContext2D) => {
+      const pBotFront = mapCoord(0.482, 0.428);
+      const pTopFront = mapCoord(0.485, 0.575);
+      const cTop1 = mapCoord(0.508, 0.56);
+      const cTop2 = mapCoord(0.528, 0.538);
+      const pTopRear = mapCoord(0.542, 0.512);
+      const pBotRear = mapCoord(0.538, 0.44);
+      const cBot1 = mapCoord(0.518, 0.434);
+      const cBot2 = mapCoord(0.498, 0.43);
+
+      ctx.beginPath();
+      ctx.moveTo(pBotFront.x, pBotFront.y);
+      ctx.lineTo(pTopFront.x, pTopFront.y);
+      ctx.bezierCurveTo(
+        cTop1.x,
+        cTop1.y,
+        cTop2.x,
+        cTop2.y,
+        pTopRear.x,
+        pTopRear.y
+      );
+      ctx.lineTo(pBotRear.x, pBotRear.y);
+      ctx.bezierCurveTo(
+        cBot1.x,
+        cBot1.y,
+        cBot2.x,
+        cBot2.y,
+        pBotFront.x,
+        pBotFront.y
+      );
+      ctx.closePath();
+    };
+
+    const windowTracers = [
+      traceWindshield,
+      traceGullwingDoorWindow,
+      traceRearQuarterWindow,
+    ];
+
+    const topSample = mapCoord(0.38, 0.68);
+    const botSample = mapCoord(0.38, 0.41);
+    const tint = Math.max(0.15, Math.min(0.95, calibration.canopyTint ?? 0.38));
+
+    // Smoked aviation acrylic glass gradient with subtle horizon sheen
+    const grad = ctxA.createLinearGradient(
+      0,
+      topSample.y,
+      0,
+      botSample.y
+    );
+    grad.addColorStop(0, tint > 0.5 ? "#0F172A" : "#1E293B");
+    grad.addColorStop(0.38, tint > 0.5 ? "#1E293B" : "#334155");
+    grad.addColorStop(0.52, tint > 0.5 ? "#334155" : "#475569");
+    grad.addColorStop(1, "#0F172A");
+
+    for (const traceFn of windowTracers) {
+      ctxA.save();
+      traceFn(ctxA);
+      ctxA.fillStyle = grad;
+      ctxA.fill();
+      ctxA.strokeStyle = "#1E293B";
+      ctxA.lineWidth = Math.max(2.5, W / 720);
+      ctxA.lineJoin = "round";
+      ctxA.stroke();
+      ctxA.restore();
+
+      // Mirror-smooth glass roughness (0.02) and high specular reflection
+      ctxR.save();
+      traceFn(ctxR);
+      ctxR.fillStyle = finishToGrayHex(0.02);
+      ctxR.fill();
+      ctxR.restore();
+
+      ctxM.save();
+      traceFn(ctxM);
+      ctxM.fillStyle = finishToGrayHex(0.22);
+      ctxM.fill();
+      ctxM.restore();
+    }
+  };
+
+  drawSlingCabinWindows(true);
+  drawSlingCabinWindows(false);
+
+  // 7. Render Flush-Riveted Alclad Panel Seams
   ctxB.fillStyle = "#808080";
   ctxB.fillRect(0, 0, W, H);
 
@@ -417,13 +558,13 @@ export function renderCompositedLiveryTextures(
       ctxB.lineWidth = Math.max(1.5, W / 1024);
 
       ctxA.save();
-      ctxA.strokeStyle = `rgba(15, 23, 42, ${0.18 * intensity})`;
-      ctxA.lineWidth = Math.max(1.2, W / 1200);
+      ctxA.strokeStyle = `rgba(15, 23, 42, ${0.15 * intensity})`;
+      ctxA.lineWidth = Math.max(1.1, W / 1400);
 
-      // Vertical fuselage bulkheads (Firewall at 0.225, Door rear at 0.46, Tailcone stations)
-      const stationsU = [0.225, 0.34, 0.465, 0.56, 0.68, 0.78, 0.88];
+      // Vertical fuselage bulkheads (Firewall at 0.225, Tailcone stations)
+      const stationsU = [0.225, 0.56, 0.68, 0.78, 0.88];
       for (const u of stationsU) {
-        const pTop = mapCoord(u, u > 0.78 ? 0.96 : 0.62);
+        const pTop = mapCoord(u, u > 0.78 ? 0.96 : 0.44);
         const pBot = mapCoord(u, 0.08);
         for (const c of [ctxB, ctxA]) {
           c.beginPath();
@@ -444,21 +585,6 @@ export function renderCompositedLiveryTextures(
         c.lineTo(rBot.x, rBot.y);
         c.stroke();
       }
-
-      // Triangular NACA side cabin ventilation duct on forward fuselage (visible in N532SL photo!)
-      const naca = mapCoord(0.295, 0.41);
-      ctxA.fillStyle = `rgba(15, 23, 42, ${0.55 * intensity})`;
-      ctxA.beginPath();
-      ctxA.moveTo(naca.x - W * 0.01, naca.y);
-      ctxA.lineTo(naca.x + W * 0.008, naca.y - H * 0.006);
-      ctxA.lineTo(naca.x + W * 0.008, naca.y + H * 0.006);
-      ctxA.closePath();
-      ctxA.fill();
-
-      // Lower cowling air outlet gill slot (visible in N532SL photo!)
-      const gill = mapCoord(0.195, 0.28);
-      ctxA.fillStyle = `rgba(15, 23, 42, ${0.72 * intensity})`;
-      ctxA.fillRect(gill.x - W * 0.006, gill.y - H * 0.012, W * 0.011, H * 0.022);
 
       ctxA.restore();
     }

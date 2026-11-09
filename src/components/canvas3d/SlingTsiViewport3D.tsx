@@ -303,18 +303,19 @@ export default function SlingTsiViewport3D({
     const spinnerFinish =
       FINISH_PRESETS[zones.spinner.finish] || FINISH_PRESETS.HIGH_GLOSS;
 
-    // 1. Fuselage + Swept Vertical Tail + Dorsal Fin + Wing Root Fillets
+    // 1. Watertight Fuselage + Flush Smoked Cabin Windows + Swept Vertical Tail
     const fusMat = new THREE.MeshPhysicalMaterial({
       map: textures.fuselageAlbedo,
       roughnessMap: textures.fuselageRoughness,
       metalnessMap: textures.fuselageMetalness,
       bumpMap: textures.fuselageBump,
-      bumpScale: calibration.showPanelLinesAndRivets ? 0.005 : 0,
+      bumpScale: calibration.showPanelLinesAndRivets ? 0.004 : 0,
       roughness: 1.0,
       metalness: 1.0,
       clearcoat: 0.96,
       clearcoatRoughness: 0.03,
       envMapIntensity: 1.35,
+      side: THREE.DoubleSide,
     });
     const fusMesh = new THREE.Mesh(meshParts.fuselageAndTailGeo, fusMat);
     fusMesh.castShadow = true;
@@ -322,23 +323,7 @@ export default function SlingTsiViewport3D({
     fusMesh.name = "fuselage";
     group.add(fusMesh);
 
-    // 2. 3 Framed Cabin Windows (Wrap-around Windshield, Gullwing Door Windows, Rear Quarter Windows)
-    const glassMat = new THREE.MeshPhysicalMaterial({
-      color: new THREE.Color("#1E293B"),
-      transparent: true,
-      opacity: 0.55 + calibration.canopyTint * 0.35,
-      roughness: 0.03,
-      metalness: 0.15,
-      clearcoat: 1.0,
-      clearcoatRoughness: 0.02,
-      envMapIntensity: 2.0,
-      side: THREE.DoubleSide,
-    });
-    const glassMesh = new THREE.Mesh(meshParts.canopyGlassGeo, glassMat);
-    glassMesh.name = "canopyGlass";
-    group.add(glassMesh);
-
-    // 3. Main Low-Wing
+    // 2. Main Low-Wing
     const wingMat = new THREE.MeshPhysicalMaterial({
       color: new THREE.Color(zones.wingBase.colorHex),
       roughness: wingFinish.roughness,
@@ -346,6 +331,7 @@ export default function SlingTsiViewport3D({
       clearcoat: wingFinish.clearcoat,
       clearcoatRoughness: wingFinish.clearcoatRoughness,
       envMapIntensity: 1.3,
+      side: THREE.DoubleSide,
     });
     const wingMesh = new THREE.Mesh(meshParts.wingMainGeo, wingMat);
     wingMesh.castShadow = true;
@@ -353,7 +339,7 @@ export default function SlingTsiViewport3D({
     wingMesh.name = "wingMain";
     group.add(wingMesh);
 
-    // 4. Swept Curved Winglets + Horizontal Stabilizer Raked Tips
+    // 3. Swept Curved Winglets + Horizontal Stabilizer Raked Tips
     const wingtipMat = new THREE.MeshPhysicalMaterial({
       color: new THREE.Color(zones.wingtips.colorHex),
       roughness: wingtipFinish.roughness,
@@ -361,6 +347,7 @@ export default function SlingTsiViewport3D({
       clearcoat: wingtipFinish.clearcoat,
       clearcoatRoughness: wingtipFinish.clearcoatRoughness,
       envMapIntensity: 1.35,
+      side: THREE.DoubleSide,
     });
     const wingtipMesh = new THREE.Mesh(meshParts.wingtipsGeo, wingtipMat);
     wingtipMesh.castShadow = true;
@@ -368,7 +355,7 @@ export default function SlingTsiViewport3D({
     wingtipMesh.name = "wingtips";
     group.add(wingtipMesh);
 
-    // 5. Horizontal Stabilizer
+    // 4. Horizontal Stabilizer
     const hStabMesh = new THREE.Mesh(
       meshParts.horizontalStabGeo,
       wingMat.clone()
@@ -378,7 +365,7 @@ export default function SlingTsiViewport3D({
     hStabMesh.name = "horizontalStab";
     group.add(hStabMesh);
 
-    // 6. Sculpted Two-Tone Wheel Pants (Spats)
+    // 5. Sculpted Two-Tone Wheel Pants (Spats)
     if (calibration.wheelPantsInstalled) {
       const spatMat = new THREE.MeshPhysicalMaterial({
         map: textures.wheelPantsAlbedo,
@@ -387,6 +374,7 @@ export default function SlingTsiViewport3D({
         clearcoat: spatFinish.clearcoat,
         clearcoatRoughness: spatFinish.clearcoatRoughness,
         envMapIntensity: 1.3,
+        side: THREE.DoubleSide,
       });
       const spatMesh = new THREE.Mesh(meshParts.wheelPantsGeo, spatMat);
       spatMesh.castShadow = true;
@@ -395,7 +383,7 @@ export default function SlingTsiViewport3D({
       group.add(spatMesh);
     }
 
-    // 6b. Painted Aerodynamic Gear Legs (matches lower belly / wingtips color like N532SL!)
+    // 6. Painted Aerodynamic Gear Legs (lofted from fuselage belly outward to wheel hubs)
     const bellyOrWingtipColor =
       stripes.find((s) => s.visible && s.fillBelowCurve)?.colorHex ||
       zones.wingtips.colorHex;
@@ -406,6 +394,7 @@ export default function SlingTsiViewport3D({
       clearcoat: 1.0,
       clearcoatRoughness: 0.04,
       envMapIntensity: 1.3,
+      side: THREE.DoubleSide,
     });
     const gearLegsMesh = new THREE.Mesh(
       meshParts.gearLegsPaintedGeo,
@@ -423,13 +412,14 @@ export default function SlingTsiViewport3D({
       clearcoat: spinnerFinish.clearcoat,
       clearcoatRoughness: spinnerFinish.clearcoatRoughness,
       envMapIntensity: 1.5,
+      side: THREE.DoubleSide,
     });
     const spinnerMesh = new THREE.Mesh(meshParts.spinnerGeo, spinnerMat);
     spinnerMesh.castShadow = true;
     spinnerMesh.name = "spinner";
     group.add(spinnerMesh);
 
-    // 8. Protected 3-Blade Scimitar Propeller
+    // 8. 3-Blade Scimitar Propeller
     const propMat = new THREE.MeshStandardMaterial({
       color: new THREE.Color("#18181B"),
       roughness: 0.32,
@@ -441,7 +431,7 @@ export default function SlingTsiViewport3D({
     propMeshRef.current = propMesh;
     group.add(propMesh);
 
-    // 9. Tires, Twin Cowling Air Intake Openings & Whip Antenna
+    // 9. Rubber Tires & Whip VHF Antenna
     const gearMat = new THREE.MeshStandardMaterial({
       color: new THREE.Color("#18181B"),
       roughness: 0.78,
@@ -451,19 +441,6 @@ export default function SlingTsiViewport3D({
     gearMesh.castShadow = true;
     gearMesh.name = "gear";
     group.add(gearMesh);
-
-    // 10. Cockpit Glare-shield & 4 Seats
-    const interiorMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color("#1E2430"),
-      roughness: 0.65,
-      metalness: 0.08,
-    });
-    const interiorMesh = new THREE.Mesh(
-      meshParts.cockpitInteriorGeo,
-      interiorMat
-    );
-    interiorMesh.name = "interior";
-    group.add(interiorMesh);
 
     const groundY = meshParts.bounds.yMin;
     if (gridHelperRef.current) gridHelperRef.current.position.y = groundY;
