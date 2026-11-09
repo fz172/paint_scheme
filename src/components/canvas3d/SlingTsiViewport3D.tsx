@@ -121,6 +121,7 @@ export default function SlingTsiViewport3D({
   const [showDimensions, setShowDimensions] = useState(true);
   const [showRefPhotoPip, setShowRefPhotoPip] = useState(true);
   const [hoverStation, setHoverStation] = useState<{
+    partName: string;
     xM: number;
     yM: number;
     zM: number;
@@ -303,7 +304,7 @@ export default function SlingTsiViewport3D({
     const spinnerFinish =
       FINISH_PRESETS[zones.spinner.finish] || FINISH_PRESETS.HIGH_GLOSS;
 
-    // 1. Watertight Fuselage + Flush Smoked Cabin Windows + Swept Vertical Tail
+    // 1. Watertight Fuselage + Flush Smoked Cabin Windows + Fixed Vertical Stabilizer
     const fusMat = new THREE.MeshPhysicalMaterial({
       map: textures.fuselageAlbedo,
       roughnessMap: textures.fuselageRoughness,
@@ -320,10 +321,17 @@ export default function SlingTsiViewport3D({
     const fusMesh = new THREE.Mesh(meshParts.fuselageAndTailGeo, fusMat);
     fusMesh.castShadow = true;
     fusMesh.receiveShadow = true;
-    fusMesh.name = "fuselage";
+    fusMesh.name = "Fuselage & Vertical Stab";
     group.add(fusMesh);
 
-    // 2. Main Low-Wing
+    // 1B. Individual Rudder (with Top Aerodynamic Horn Balance & Lower Rudder Horn)
+    const rudderMesh = new THREE.Mesh(meshParts.rudderGeo, fusMat.clone());
+    rudderMesh.castShadow = true;
+    rudderMesh.receiveShadow = true;
+    rudderMesh.name = "Rudder";
+    group.add(rudderMesh);
+
+    // 2. Fixed Main Low-Wing Box & D-Nose
     const wingMat = new THREE.MeshPhysicalMaterial({
       color: new THREE.Color(zones.wingBase.colorHex),
       roughness: wingFinish.roughness,
@@ -336,10 +344,36 @@ export default function SlingTsiViewport3D({
     const wingMesh = new THREE.Mesh(meshParts.wingMainGeo, wingMat);
     wingMesh.castShadow = true;
     wingMesh.receiveShadow = true;
-    wingMesh.name = "wingMain";
+    wingMesh.name = "Main Wing";
     group.add(wingMesh);
 
-    // 3. Swept Curved Winglets + Horizontal Stabilizer Raked Tips
+    // 2B. Inboard Non-Skid Wing Walk Step Pads (Matte Textured Black per photo_16.jpg)
+    const wingWalkMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color("#1E2024"),
+      roughness: 0.92,
+      metalness: 0.05,
+      side: THREE.DoubleSide,
+    });
+    const wingWalkMesh = new THREE.Mesh(meshParts.wingWalkGeo, wingWalkMat);
+    wingWalkMesh.receiveShadow = true;
+    wingWalkMesh.name = "Wing Walk (Non-Skid)";
+    group.add(wingWalkMesh);
+
+    // 2C. Individual Slotted/Hinged Flaps (Left & Right)
+    const flapsMesh = new THREE.Mesh(meshParts.flapsGeo, wingMat.clone());
+    flapsMesh.castShadow = true;
+    flapsMesh.receiveShadow = true;
+    flapsMesh.name = "Flaps";
+    group.add(flapsMesh);
+
+    // 2D. Individual Ailerons (Left & Right)
+    const aileronsMesh = new THREE.Mesh(meshParts.aileronsGeo, wingMat.clone());
+    aileronsMesh.castShadow = true;
+    aileronsMesh.receiveShadow = true;
+    aileronsMesh.name = "Ailerons";
+    group.add(aileronsMesh);
+
+    // 3. Swept Curved Winglets + Horizontal Stabilizer Fiberglass Tip Caps
     const wingtipMat = new THREE.MeshPhysicalMaterial({
       color: new THREE.Color(zones.wingtips.colorHex),
       roughness: wingtipFinish.roughness,
@@ -352,18 +386,28 @@ export default function SlingTsiViewport3D({
     const wingtipMesh = new THREE.Mesh(meshParts.wingtipsGeo, wingtipMat);
     wingtipMesh.castShadow = true;
     wingtipMesh.receiveShadow = true;
-    wingtipMesh.name = "wingtips";
+    wingtipMesh.name = "Winglets & H-Stab Tips";
     group.add(wingtipMesh);
 
-    // 4. Horizontal Stabilizer
+    // 4. Fixed Horizontal Stabilizer
     const hStabMesh = new THREE.Mesh(
       meshParts.horizontalStabGeo,
       wingMat.clone()
     );
     hStabMesh.castShadow = true;
     hStabMesh.receiveShadow = true;
-    hStabMesh.name = "horizontalStab";
+    hStabMesh.name = "Horizontal Stabilizer";
     group.add(hStabMesh);
+
+    // 4B. Individual Elevators (with Outer Aerodynamic Horn Balances & Left Trim Tab)
+    const elevatorsMesh = new THREE.Mesh(
+      meshParts.elevatorsGeo,
+      wingMat.clone()
+    );
+    elevatorsMesh.castShadow = true;
+    elevatorsMesh.receiveShadow = true;
+    elevatorsMesh.name = "Elevators & Trim Tab";
+    group.add(elevatorsMesh);
 
     // 5. Sculpted Two-Tone Wheel Pants (Spats)
     if (calibration.wheelPantsInstalled) {
@@ -538,6 +582,7 @@ export default function SlingTsiViewport3D({
     if (hits.length > 0) {
       const pt = hits[0].point;
       setHoverStation({
+        partName: hits[0].object.name || "Airframe",
         xM: Math.max(0, pt.x - meshParts.bounds.xMin),
         yM: pt.y - meshParts.bounds.yMin,
         zM: pt.z,
@@ -582,6 +627,9 @@ export default function SlingTsiViewport3D({
 
         {hoverStation && (
           <div className="px-3 py-1 rounded-md bg-slate-950/90 border border-sky-500/40 font-mono text-[11px] text-sky-300 shadow">
+            <span className="text-emerald-300 font-semibold">
+              [{hoverStation.partName}]
+            </span>{" "}
             STA X: {(hoverStation.xM * 1000).toFixed(0)}mm (
             {hoverStation.xM.toFixed(2)}m) | WL Y:{" "}
             {(hoverStation.yM * 1000).toFixed(0)}mm | BL Z:{" "}
