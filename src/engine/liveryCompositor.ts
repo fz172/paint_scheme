@@ -405,38 +405,58 @@ export function renderCompositedLiveryTextures(
   renderSideBand(true);
   renderSideBand(false);
 
-  // 6b. Render the 3 Signature Sling 4 TSi Smoked Acrylic Cabin Windows
-  // (1: One-piece Wrap-Around Windshield, 2: Gullwing Side Door Window, 3: Rear Passenger Quarter Window)
-  // Painted A-pillar, B-pillar, and roof centerline spine remain in the fuselage paint scheme!
+  // 6b. Render the 3 Signature Sling 4 TSi Smoked Acrylic Cabin Windows using exact POH meter coordinates!
+  //     s in [0, 7.20m] from spinner tip, y in [-0.58m, +1.17m] relative to thrustline.
   const drawSlingCabinWindows = (isPort: boolean) => {
     const mapCoord = makeSideMapper(isPort);
+    const mapMeters = (sMeters: number, yMeters: number) => {
+      const uNorm = Math.max(0, Math.min(1, sMeters / 7.2));
+      const vNorm = Math.max(0, Math.min(1, (yMeters + 0.58) / 1.75));
+      return mapCoord(uNorm, vNorm);
+    };
 
+    // 1. One-Piece Wrap-Around Front Windshield (s = 1.46m .. 2.02m)
     const traceWindshield = (ctx: CanvasRenderingContext2D) => {
-      const p0 = mapCoord(0.233, 0.495);
-      const c1 = mapCoord(0.265, 0.625);
-      const c2 = mapCoord(0.305, 0.725);
-      const pTop = mapCoord(0.34, 0.73);
-      const pBotRear = mapCoord(0.348, 0.415);
-      const c3 = mapCoord(0.305, 0.415);
-      const c4 = mapCoord(0.265, 0.445);
+      const pFront = mapMeters(1.46, 0.305);
+      const cTop1 = mapMeters(1.64, 0.44);
+      const cTop2 = mapMeters(1.84, 0.55);
+      const pTopRear = mapMeters(2.02, 0.58); // wraps across top centerline
+      const pBotRear = mapMeters(1.94, 0.095);
+      const cBot1 = mapMeters(1.75, 0.115);
+      const cBot2 = mapMeters(1.58, 0.195);
 
       ctx.beginPath();
-      ctx.moveTo(p0.x, p0.y);
-      ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, pTop.x, pTop.y);
+      ctx.moveTo(pFront.x, pFront.y);
+      ctx.bezierCurveTo(
+        cTop1.x,
+        cTop1.y,
+        cTop2.x,
+        cTop2.y,
+        pTopRear.x,
+        pTopRear.y
+      );
       ctx.lineTo(pBotRear.x, pBotRear.y);
-      ctx.bezierCurveTo(c3.x, c3.y, c4.x, c4.y, p0.x, p0.y);
+      ctx.bezierCurveTo(
+        cBot1.x,
+        cBot1.y,
+        cBot2.x,
+        cBot2.y,
+        pFront.x,
+        pFront.y
+      );
       ctx.closePath();
     };
 
+    // 2. Gullwing Front Side Door Window (s = 2.05m .. 2.98m, leaves painted roof spine on top!)
     const traceGullwingDoorWindow = (ctx: CanvasRenderingContext2D) => {
-      const pBotFront = mapCoord(0.364, 0.415);
-      const pTopFront = mapCoord(0.356, 0.642);
-      const cTop1 = mapCoord(0.388, 0.662);
-      const cTop2 = mapCoord(0.432, 0.638);
-      const pTopRear = mapCoord(0.464, 0.595);
-      const pBotRear = mapCoord(0.46, 0.422);
-      const cBot1 = mapCoord(0.425, 0.416);
-      const cBot2 = mapCoord(0.39, 0.414);
+      const pBotFront = mapMeters(2.05, 0.09);
+      const pTopFront = mapMeters(2.13, 0.51);
+      const cTop1 = mapMeters(2.4, 0.56);
+      const cTop2 = mapMeters(2.72, 0.545);
+      const pTopRear = mapMeters(2.98, 0.49);
+      const pBotRear = mapMeters(2.93, 0.085);
+      const cBot1 = mapMeters(2.65, 0.082);
+      const cBot2 = mapMeters(2.32, 0.085);
 
       ctx.beginPath();
       ctx.moveTo(pBotFront.x, pBotFront.y);
@@ -461,15 +481,17 @@ export function renderCompositedLiveryTextures(
       ctx.closePath();
     };
 
+    // 3. Sleek Teardrop / D-Shaped Rear Passenger Window (s = 3.07m .. 3.59m, matched to POH & N916TS!)
+    //    Front edge parallels the B-pillar; top follows sloping rear cabin roof;
+    //    bottom sill sweeps smoothly upward at the rear to meet the rounded rear apex!
     const traceRearQuarterWindow = (ctx: CanvasRenderingContext2D) => {
-      const pBotFront = mapCoord(0.482, 0.428);
-      const pTopFront = mapCoord(0.485, 0.575);
-      const cTop1 = mapCoord(0.508, 0.56);
-      const cTop2 = mapCoord(0.528, 0.538);
-      const pTopRear = mapCoord(0.542, 0.512);
-      const pBotRear = mapCoord(0.538, 0.44);
-      const cBot1 = mapCoord(0.518, 0.434);
-      const cBot2 = mapCoord(0.498, 0.43);
+      const pBotFront = mapMeters(3.06, 0.098);
+      const pTopFront = mapMeters(3.12, 0.458);
+      const cTop1 = mapMeters(3.28, 0.435);
+      const cTop2 = mapMeters(3.45, 0.395);
+      const pRearApex = mapMeters(3.58, 0.315);
+      const cBot1 = mapMeters(3.56, 0.195);
+      const cBot2 = mapMeters(3.34, 0.102);
 
       ctx.beginPath();
       ctx.moveTo(pBotFront.x, pBotFront.y);
@@ -479,10 +501,9 @@ export function renderCompositedLiveryTextures(
         cTop1.y,
         cTop2.x,
         cTop2.y,
-        pTopRear.x,
-        pTopRear.y
+        pRearApex.x,
+        pRearApex.y
       );
-      ctx.lineTo(pBotRear.x, pBotRear.y);
       ctx.bezierCurveTo(
         cBot1.x,
         cBot1.y,
@@ -500,17 +521,11 @@ export function renderCompositedLiveryTextures(
       traceRearQuarterWindow,
     ];
 
-    const topSample = mapCoord(0.38, 0.68);
-    const botSample = mapCoord(0.38, 0.41);
+    const topSample = mapMeters(2.55, 0.58);
+    const botSample = mapMeters(2.55, 0.08);
     const tint = Math.max(0.15, Math.min(0.95, calibration.canopyTint ?? 0.38));
 
-    // Smoked aviation acrylic glass gradient with subtle horizon sheen
-    const grad = ctxA.createLinearGradient(
-      0,
-      topSample.y,
-      0,
-      botSample.y
-    );
+    const grad = ctxA.createLinearGradient(0, topSample.y, 0, botSample.y);
     grad.addColorStop(0, tint > 0.5 ? "#0F172A" : "#1E293B");
     grad.addColorStop(0.38, tint > 0.5 ? "#1E293B" : "#334155");
     grad.addColorStop(0.52, tint > 0.5 ? "#334155" : "#475569");
@@ -527,7 +542,6 @@ export function renderCompositedLiveryTextures(
       ctxA.stroke();
       ctxA.restore();
 
-      // Mirror-smooth glass roughness (0.02) and high specular reflection
       ctxR.save();
       traceFn(ctxR);
       ctxR.fillStyle = finishToGrayHex(0.02);
@@ -561,11 +575,11 @@ export function renderCompositedLiveryTextures(
       ctxA.strokeStyle = `rgba(15, 23, 42, ${0.15 * intensity})`;
       ctxA.lineWidth = Math.max(1.1, W / 1400);
 
-      // Vertical fuselage bulkheads (Firewall at 0.225, Tailcone stations)
-      const stationsU = [0.225, 0.56, 0.68, 0.78, 0.88];
+      // Vertical fuselage bulkheads (Firewall at 0.205, Tailcone stations)
+      const stationsU = [0.205, 0.56, 0.68, 0.8];
       for (const u of stationsU) {
-        const pTop = mapCoord(u, u > 0.78 ? 0.96 : 0.44);
-        const pBot = mapCoord(u, 0.08);
+        const pTop = mapCoord(u, 0.49);
+        const pBot = mapCoord(u, 0.04);
         for (const c of [ctxB, ctxA]) {
           c.beginPath();
           c.moveTo(pTop.x, pTop.y);
@@ -575,9 +589,9 @@ export function renderCompositedLiveryTextures(
       }
 
       // Rudder hinge seam on vertical tail (matches POH Page 1 rudder line!)
-      const rTop = mapCoord(0.89, 0.96);
-      const rMid = mapCoord(0.92, 0.96);
-      const rBot = mapCoord(0.88, 0.36);
+      const rTop = mapCoord(0.925, 0.94);
+      const rMid = mapCoord(0.952, 0.94);
+      const rBot = mapCoord(0.908, 0.45);
       for (const c of [ctxB, ctxA]) {
         c.beginPath();
         c.moveTo(rTop.x, rTop.y);

@@ -47,7 +47,6 @@ function appendSmoothLoftedGrid(
   const numJ = grid[0].length - 1;
   if (numJ < 1) return;
 
-  // 1. Accumulate smooth outward normals at each grid vertex (i, j)
   const vNormals: THREE.Vector3[][] = [];
   for (let i = 0; i <= numI; i++) {
     const row: THREE.Vector3[] = [];
@@ -73,7 +72,6 @@ function appendSmoothLoftedGrid(
       const c = grid[i + 1][j + 1];
       const d = grid[i][j + 1];
 
-      // Diagonal cross product of quad (a, b, c, d): (c - a) x (d - b)
       e1.subVectors(c.pos, a.pos);
       e2.subVectors(d.pos, b.pos);
       qNorm.crossVectors(e1, e2);
@@ -107,7 +105,6 @@ function appendSmoothLoftedGrid(
     quadFlip.push(flipRow);
   }
 
-  // Weld seam normals when closed around J (360-degree tubes like wheel pants, struts)
   if (closedInJ) {
     for (let i = 0; i <= numI; i++) {
       const sum = vNormals[i][0].clone().add(vNormals[i][numJ]);
@@ -133,7 +130,11 @@ function appendSmoothLoftedGrid(
     }
   }
 
-  const pushVert = (pos: THREE.Vector3, norm: THREE.Vector3, uv: [number, number]) => {
+  const pushVert = (
+    pos: THREE.Vector3,
+    norm: THREE.Vector3,
+    uv: [number, number]
+  ) => {
     outPositions.push(pos.x, pos.y, pos.z);
     outNormals.push(norm.x, norm.y, norm.z);
     outUvs.push(uv[0], uv[1]);
@@ -153,7 +154,6 @@ function appendSmoothLoftedGrid(
       const nd = vNormals[i][j + 1];
 
       if (!quadFlip[i][j]) {
-        // Standard winding: (a, b, c) and (a, c, d)
         pushVert(a.pos, na, a.uv);
         pushVert(b.pos, nb, b.uv);
         pushVert(c.pos, nc, c.uv);
@@ -162,7 +162,6 @@ function appendSmoothLoftedGrid(
         pushVert(c.pos, nc, c.uv);
         pushVert(d.pos, nd, d.uv);
       } else {
-        // Flipped outward winding: (a, c, b) and (a, d, c)
         pushVert(a.pos, na, a.uv);
         pushVert(c.pos, nc, c.uv);
         pushVert(b.pos, nb, b.uv);
@@ -178,7 +177,10 @@ function appendSmoothLoftedGrid(
 /**
  * Evaluates the authentic Sling 4 TSi longitudinal fuselage cross-section at normalized
  * fuselage station t in [0, 1], where t=0 is the forward cowling nose behind the spinner
- * (s = 0.44m from spinner tip) and t=1 is the tailcone tip (s = 6.95m from spinner tip).
+ * (s = 0.42m from spinner tip) and t=1 is the tailcone tip under the rudder (s = 7.00m).
+ *
+ * Calibrated directly to pixel measurements of the official POH Section 1.3 3-View Drawing
+ * (Side View 1109x498, Front View 774x270, Top View 730x583) and N916TS / N532SL reference photos.
  *
  * Vertical coordinates y are in meters relative to the Propeller Thrustline (y = 0.00m).
  * Ground level is at y = -1.180m (POH 1180mm), Fin Tip is at y = +1.170m (POH 2350mm total height).
@@ -191,82 +193,83 @@ export function evaluateSlingFuselageStation(t: number): {
   superellipseBotN: number;
   yMaxWidthLine: number;
 } {
-  // At t=0 (spinner backplate junction), match the circular spinner radius (0.205m centered at y = +0.03m)
-  const spinnerCenterY = 0.03;
-  const spinnerRadius = 0.205;
+  // Convert normalized fuselage station t in [0, 1] to meters s from spinner tip [0.42m .. 7.00m]
+  const s = 0.42 + t * 6.58;
 
-  let yBottom = -0.44;
-  let yTop = 0.25;
-  let halfWidth = 0.45;
-  let superellipseTopN = 2.05;
-  let superellipseBotN = 2.15;
+  const spinnerCenterY = 0.01;
+  const spinnerRadius = 0.21;
 
-  // 1. Upper Deck / Cabin Roof / Tailcone Spine Profile (matched to POH Side View & N532SL)
-  if (t < 0.19) {
-    // Smooth Rotax 916iS upper cowling deck sloping from spinner backplate (y=0.235) to windshield base (y=0.31)
-    const u = t / 0.19;
-    yTop = spinnerCenterY + spinnerRadius + 0.075 * Math.pow(u, 0.72);
-  } else if (t < 0.34) {
-    // Wrap-around windshield & forward cabin roof arch rising to crown (y=0.67m)
-    const u = (t - 0.19) / 0.15;
-    yTop = 0.31 + 0.36 * Math.sin(u * Math.PI * 0.5);
-  } else if (t < 0.56) {
-    // Rear cabin roof sloping smoothly over rear passenger window into tailcone
-    const u = (t - 0.34) / 0.22;
-    const smoothDrop = u * u * (3 - 2 * u);
-    yTop = 0.67 - 0.39 * smoothDrop;
+  let yTop = 0.295;
+  let yBottom = -0.55;
+  let halfWidth = 0.594;
+  let superellipseTopN = 2.15;
+  let superellipseBotN = 2.35;
+
+  // 1. Upper Profile yTop(s) — Measured directly from POH Side View:
+  //    s=0.42m: +0.22m (behind spinner)
+  //    s=1.45m: +0.30m (base of wrap-around windshield)
+  //    s=2.55m: +0.623m (cabin roof crown)
+  //    s=3.65m: +0.49m (rear of passenger window)
+  //    s=4.50m..7.00m: +0.295m (horizontal tailcone dorsal spine!)
+  if (s < 1.45) {
+    const u = (s - 0.42) / (1.45 - 0.42);
+    yTop = spinnerCenterY + spinnerRadius + 0.08 * Math.pow(u, 0.72);
+  } else if (s < 2.55) {
+    const u = (s - 1.45) / (2.55 - 1.45);
+    yTop = 0.30 + 0.323 * Math.sin(u * Math.PI * 0.5);
+  } else if (s < 4.50) {
+    const u = (s - 2.55) / (4.50 - 2.55);
+    const smooth = u * u * (3 - 2 * u);
+    yTop = 0.623 - (0.623 - 0.295) * smooth;
   } else {
-    // Flush-riveted tailcone dorsal spine (t=0.56 to 1.0)
-    const u = (t - 0.56) / 0.44;
-    yTop = 0.28 - 0.12 * u;
+    const u = (s - 4.50) / (7.00 - 4.50);
+    yTop = 0.295 - 0.025 * u;
   }
 
-  // 2. Lower Belly Profile (Spinner junction -> Chin scoop -> flat cabin floor -> 14-deg tailcone upsweep)
-  if (t < 0.14) {
-    // Smooth curve from spinner bottom (-0.175m) down to chin radiator scoop & lower cowling (-0.45m)
-    const u = t / 0.14;
+  // 2. Lower Belly Profile yBottom(s) — Measured directly from POH Side & Front Views:
+  //    s=0.42m: -0.20m (behind spinner)
+  //    s=0.95m: -0.52m (deep lower cowling & chin scoop)
+  //    s=1.80m..3.50m: -0.555m (deep cabin belly & center-section wing carry-through)
+  //    s=3.50m..7.00m: rises along 14-deg clearance line from -0.555m to -0.20m at s=7.00m
+  //    (giving a deep, muscular tailcone: 0.72m tall at mid-tailcone, 0.47m tall under the rudder!)
+  if (s < 0.95) {
+    const u = (s - 0.42) / (0.95 - 0.42);
     yBottom =
       spinnerCenterY -
       spinnerRadius -
-      0.275 * Math.sin(Math.pow(u, 0.7) * Math.PI * 0.5);
-  } else if (t < 0.47) {
-    // Deep cabin tub & center-section wing carry-through belly
-    const u = (t - 0.14) / 0.33;
-    yBottom = -0.45 - 0.035 * Math.sin(u * Math.PI);
+      0.32 * Math.sin(Math.pow(u, 0.68) * Math.PI * 0.5);
+  } else if (s < 3.50) {
+    const u = (s - 0.95) / (3.50 - 0.95);
+    yBottom = -0.52 - 0.038 * Math.sin(u * Math.PI);
   } else {
-    // POH 14-degree tailcone bottom upsweep toward tail tie-down
-    const u = (t - 0.47) / 0.53;
-    yBottom = -0.45 + 0.41 * Math.pow(u, 1.04);
+    const u = (s - 3.50) / (7.00 - 3.50);
+    yBottom = -0.545 + 0.345 * Math.pow(u, 0.96);
   }
 
-  // 3. Half-Width Profile (POH Cabin Width = 1188mm -> halfWidth = 0.594m at t = 0.33)
-  if (t < 0.19) {
-    // Widens smoothly from spinner radius (0.205m) across twin-cheek Rotax cowling to cabin width (0.575m)
-    const u = t / 0.19;
-    halfWidth = spinnerRadius + (0.575 - spinnerRadius) * Math.pow(u, 0.58);
+  // 3. Half-Width Profile halfWidth(s) — Measured directly from POH Top View (Page 2):
+  //    Cabin width = 1188mm (halfWidth = 0.594m) maintained from firewall across cabin (s=1.55m..3.55m),
+  //    then tapers smoothly along the tailcone to 0.085m at the rudder post.
+  if (s < 1.55) {
+    const u = (s - 0.42) / (1.55 - 0.42);
+    halfWidth = spinnerRadius + (0.585 - spinnerRadius) * Math.pow(u, 0.55);
     superellipseTopN = 2.0 + 0.35 * Math.sin(u * Math.PI);
-    superellipseBotN = 2.0 + 0.3 * u;
-  } else if (t < 0.48) {
-    // 4-place cabin (1.188m width -> 0.594m half-width)
-    const u = (t - 0.19) / 0.29;
-    halfWidth = 0.575 + 0.02 * Math.sin(u * Math.PI);
-    superellipseTopN = 2.12;
-    superellipseBotN = 2.35;
+    superellipseBotN = 2.0 + 0.35 * u;
+  } else if (s < 3.55) {
+    const u = (s - 1.55) / (3.55 - 1.55);
+    halfWidth = 0.585 + 0.012 * Math.sin(u * Math.PI);
+    superellipseTopN = 2.22;
+    superellipseBotN = 2.45;
   } else {
-    // Tapered aluminum tailcone (Matched to POH Page 2 Top Planform)
-    const u = (t - 0.48) / 0.52;
-    halfWidth = 0.575 * Math.pow(1 - u, 1.1) + 0.02;
-    superellipseTopN = 2.0;
-    superellipseBotN = 2.0;
+    const u = (s - 3.55) / (7.00 - 3.55);
+    halfWidth = 0.585 * Math.pow(1 - u, 0.85) + 0.065 * (1 - 0.5 * u);
+    superellipseTopN = 2.15;
+    superellipseBotN = 2.2;
   }
 
-  // Waist beltline height where maximum width occurs (starts at spinnerCenterY = 0.03 at t=0)
   const yMaxWidthLine =
-    t < 0.19
-      ? spinnerCenterY + (0.08 - spinnerCenterY) * (t / 0.19)
-      : t < 0.52
-        ? 0.08
-        : 0.08;
+    s < 1.45
+      ? spinnerCenterY + (0.04 - spinnerCenterY) * ((s - 0.42) / (1.45 - 0.42))
+      : 0.04;
 
   return {
     yBottom,
@@ -342,7 +345,6 @@ function computeFuselageOrthographicUV(
 export function buildSlingTsiGeometry(
   cal: AirframeCalibration
 ): SlingTsiMeshParts {
-  // Exact Sling 4 TSi POH dimensions
   const lengthM = cal.lengthM || 7.2;
   const wingspanM = cal.wingspanM || 9.5;
   const heightM = cal.heightM || 2.35;
@@ -351,10 +353,10 @@ export function buildSlingTsiGeometry(
   const heightScale = heightM / 2.35;
   const widthScale = (cal.cabinWidthM || 1.188) / 1.188;
 
-  // Center aircraft around X = 0 (Spinner tip at -3.60m * lengthScale, Rudder TE at +3.60m * lengthScale)
+  // Center aircraft around X = 0 (Spinner tip at -3.60m * lengthScale, Rudder TE tip at +3.60m * lengthScale)
   const xSpinnerTip = -3.6 * lengthScale;
-  const xNoseCowl = (-3.6 + 0.44) * lengthScale; // Spinner is 440mm long
-  const xFuselageEnd = (-3.6 + 6.95) * lengthScale;
+  const xNoseCowl = (-3.6 + 0.42) * lengthScale;
+  const xFuselageEnd = (-3.6 + 7.0) * lengthScale;
   const xRudderTE = (-3.6 + 7.2) * lengthScale;
   const fusLength = xFuselageEnd - xNoseCowl;
 
@@ -363,8 +365,8 @@ export function buildSlingTsiGeometry(
   const yGround = -(cal.propThrustlineHeightM || 1.18) * heightScale;
   const yFinTop = yGround + heightM;
 
-  // Fuselage UV Vertical Projection Bounds (from lowest belly y=-0.52m to fin top y=+1.17m)
-  const yUvMin = -0.52 * heightScale;
+  // Fuselage UV Vertical Projection Bounds (from lowest belly y=-0.58m to fin top y=+1.17m -> span 1.75m)
+  const yUvMin = -0.58 * heightScale;
   const yUvMax = yFinTop;
   const xUvMin = xSpinnerTip;
   const xUvMax = xRudderTE;
@@ -373,9 +375,9 @@ export function buildSlingTsiGeometry(
   const fusNormals: number[] = [];
   const fusUvs: number[] = [];
 
-  // 1. Build Watertight, Smooth-Shaded Lofted Fuselage (Port and Starboard halves share welded centerline normals)
-  const numStations = 88;
-  const halfRadial = 32; // 32 steps per side = 64 radial steps total
+  // 1. Build Watertight, Smooth-Shaded Lofted Fuselage (Deep Cabin & Muscular Tailcone)
+  const numStations = 92;
+  const halfRadial = 32;
 
   const buildFuselageHalf = (sideSign: 1 | -1) => {
     const grid: GridVertex[][] = [];
@@ -391,7 +393,6 @@ export function buildSlingTsiGeometry(
 
       const row: GridVertex[] = [];
       for (let j = 0; j <= halfRadial; j++) {
-        // theta from 0 (top spine) to PI (bottom centerline)
         const theta = (j / halfRadial) * Math.PI;
         const cosT = Math.cos(theta);
         const sinT = Math.sin(theta);
@@ -407,11 +408,10 @@ export function buildSlingTsiGeometry(
           : st.yMaxWidthLine + yNorm * (st.yMaxWidthLine - st.yBottom);
 
         let zAbs = zNorm * st.halfWidth;
-        // Subtle twin-cheek Rotax cowling swell near nose (t in [0.02, 0.16])
-        if (t > 0.01 && t < 0.16 && isUpperHalf && sinT > 0.35) {
+        if (t > 0.01 && t < 0.15 && isUpperHalf && sinT > 0.35) {
           const swell =
-            Math.sin(((t - 0.01) / 0.15) * Math.PI) *
-            0.024 *
+            Math.sin(((t - 0.01) / 0.14) * Math.PI) *
+            0.022 *
             Math.sin(sinT * Math.PI);
           zAbs += swell;
         }
@@ -449,8 +449,12 @@ export function buildSlingTsiGeometry(
   buildFuselageHalf(1);
   buildFuselageHalf(-1);
 
-  // 2. Build Swept Vertical Stabilizer + Dorsal Fin Fillet + Rudder (POH Page 1 exact profile)
-  const finBaseY = 0.12 * heightScale;
+  // 2. Build Slender Swept Vertical Stabilizer + Rudder (Exact POH Page 1 Pixel Measurements!)
+  //    At base (y = +0.26m): LE at s = 6.02m (with subtle dorsal fillet to s = 5.75m), TE at s = 7.01m (chord = 0.99m)
+  //    At tip  (y = +1.17m): LE at s = 6.63m, TE at s = 7.20m (tip chord = 0.57m)
+  //    Notice how the rudder trailing edge slants forward as it goes down (7.20m at top -> 7.01m at bottom),
+  //    and the airfoil is a slender 6.5% section!
+  const finBaseY = 0.24 * heightScale;
   const finSpan = yFinTop - finBaseY;
   const finLevels = 30;
   const finChordSteps = 28;
@@ -462,16 +466,17 @@ export function buildSlingTsiGeometry(
       const v = i / finLevels;
       const y = finBaseY + v * finSpan;
 
-      // Dorsal fillet sweeps forward along the tailcone spine for v < 0.26
+      // Subtle dorsal fin fillet only in the lowest 14% where fin blends into tailcone spine
       const dorsalExt =
-        v < 0.26 ? Math.pow(1 - v / 0.26, 2.1) * 0.78 * lengthScale : 0;
+        v < 0.14 ? Math.pow(1 - v / 0.14, 2.2) * 0.28 * lengthScale : 0;
 
-      // Main fin leading edge sweeps from s=5.82m at base to s=6.55m at tip
-      const leX = (-3.6 + 5.82 + v * 0.73) * lengthScale - dorsalExt;
-      // Rudder trailing edge sweeps from s=7.20m at base to s=7.06m at tip
-      const teX = (-3.6 + 7.2 - v * 0.14) * lengthScale;
+      // Exact POH leading edge: s=6.02m at base -> s=6.63m at tip
+      const leX = (-3.6 + 6.02 + v * 0.61) * lengthScale - dorsalExt;
+      // Exact POH rudder trailing edge: s=7.01m at base -> s=7.20m at tip (slants aft toward top!)
+      const teX = (-3.6 + 7.01 + v * 0.19) * lengthScale;
       const chord = Math.max(0.25, teX - leX);
-      const thickness = 0.11 * (1 - 0.35 * v);
+      // Slender 6.5% tail section (tapers to 5.0% at tip)
+      const thickness = 0.065 * (1 - 0.25 * v);
 
       const row: GridVertex[] = [];
       for (let j = 0; j <= finChordSteps; j++) {
@@ -528,16 +533,14 @@ export function buildSlingTsiGeometry(
     new THREE.Float32BufferAttribute(fusUvs, 2)
   );
 
-  // Canopy glass is rendered flush in the 2048x2048 multi-channel PBR fuselage texture
-  // so there are no jagged polygon holes or floating interior blocks.
   const canopyGlassGeo = new THREE.BufferGeometry();
 
   // 3. Build Low-Wing Main Airfoil + Signature Sling TSi Blended Curved Winglets
-  // Starts at z = 0.34m inside the lower fuselage with a smooth wing-root fillet flare
+  //    Positioned at y = -0.46m (bottom of wing at y = -0.56m, matching POH Front & Side View!)
   const wingLES = (cal.wingLEStationM || 1.912) * lengthScale;
   const rootChord = (cal.wingChordRootM || 1.52) * lengthScale;
   const wingRootXCenter = xSpinnerTip + wingLES + rootChord * 0.5;
-  const wingRootY = -0.34 * heightScale;
+  const wingRootY = -0.45 * heightScale;
 
   const halfSpan = wingspanM * 0.5;
   const tipChord = (cal.wingChordTipM || 1.02) * lengthScale;
@@ -561,36 +564,35 @@ export function buildSlingTsiGeometry(
       const isWingletZone = s >= 0.84;
       const wProg = isWingletZone ? (s - 0.84) / 0.16 : 0;
 
-      // Spanwise Z coordinate: starts at 0.35m (inside fuselage wall) with smooth wing-root fillet
       const rootZ = 0.35 * widthScale;
-      const linearSpan =
-        rootZ + (s / 0.84) * (halfSpan * 0.94 - rootZ);
+      const linearSpan = rootZ + (s / 0.84) * (halfSpan * 0.94 - rootZ);
       const zAbs = isWingletZone
         ? halfSpan * 0.94 + Math.sin(wProg * Math.PI * 0.5) * (halfSpan * 0.06)
         : linearSpan;
       const z = sideSign * zAbs;
 
-      // Wing-root aerodynamic fillet flare near fuselage wall (s < 0.08)
-      const rootFillet = s < 0.08 ? Math.pow(1 - s / 0.08, 2) * 0.16 * lengthScale : 0;
+      const rootFillet =
+        s < 0.08 ? Math.pow(1 - s / 0.08, 2) * 0.16 * lengthScale : 0;
 
-      // Constant chord (1.52m) out to s=0.46 (POH Page 2), then linear taper to tipChord, then winglet taper
       const outerTaper = s < 0.46 ? 0 : Math.min(1, (s - 0.46) / 0.38);
-      const baseChord = rootChord * (1 - outerTaper) + tipChord * outerTaper + rootFillet;
-      const chord = Math.max(0.18, baseChord * (1 - 0.62 * Math.pow(wProg, 1.35)));
+      const baseChord =
+        rootChord * (1 - outerTaper) + tipChord * outerTaper + rootFillet;
+      const chord = Math.max(
+        0.18,
+        baseChord * (1 - 0.62 * Math.pow(wProg, 1.35))
+      );
 
-      // Vertical Y coordinate: dihedral + curved upward winglet rise (+0.36m at winglet tip)
       const yDihedral =
-        wingRootY + Math.max(0, zAbs - 0.52 * widthScale) * Math.tan(dihedralRad);
+        wingRootY +
+        Math.max(0, zAbs - 0.52 * widthScale) * Math.tan(dihedralRad);
       const yWingletRise = Math.pow(wProg, 1.75) * 0.36 * heightScale;
       const yCenter = yDihedral + yWingletRise;
 
-      // Longitudinal X coordinate
       const xCenter =
         wingRootXCenter +
         outerTaper * 0.11 * lengthScale +
         Math.pow(wProg, 1.45) * 0.38 * lengthScale;
 
-      // Cant angle: airfoil rotates smoothly into the upturned winglet
       const cantAngle = wProg * 1.18;
       const cosCant = Math.cos(cantAngle);
       const sinCant = Math.sin(cantAngle);
@@ -604,7 +606,8 @@ export function buildSlingTsiGeometry(
         const xNorm = isUpper ? 1 - p * 2 : (p - 0.5) * 2;
         const af = evaluateAirfoil(
           xNorm,
-          0.145 * (1 - 0.28 * wProg) + (s < 0.08 ? 0.025 * (1 - s / 0.08) : 0),
+          0.145 * (1 - 0.28 * wProg) +
+            (s < 0.08 ? 0.025 * (1 - s / 0.08) : 0),
           0.022 * (1 - wProg),
           0.4,
           isUpper
@@ -625,7 +628,6 @@ export function buildSlingTsiGeometry(
       grid.push(row);
     }
 
-    // Inner main wing (s < 0.78)
     appendSmoothLoftedGrid(
       grid,
       true,
@@ -634,7 +636,6 @@ export function buildSlingTsiGeometry(
       wingUvs,
       (i, numI) => i / numI < 0.78
     );
-    // Outer wingtip & upturned winglet (s >= 0.78)
     appendSmoothLoftedGrid(
       grid,
       true,
@@ -654,9 +655,9 @@ export function buildSlingTsiGeometry(
   const hStabUvs: number[] = [];
   const hHalfSpan = ((cal.hStabSpanM || 3.095) * 0.5) * (wingspanM / 9.5);
   const hChordRoot = (cal.hStabChordM || 0.921) * lengthScale;
-  const hChordTip = hChordRoot * 0.72;
-  const hStabX = (-3.6 + 6.42) * lengthScale;
-  const hStabY = 0.08 * heightScale;
+  const hChordTip = hChordRoot * 0.74;
+  const hStabX = (-3.6 + 6.45) * lengthScale;
+  const hStabY = 0.06 * heightScale;
 
   const buildHStabHalf = (sideSign: 1 | -1) => {
     const sSteps = 20;
@@ -670,8 +671,8 @@ export function buildSlingTsiGeometry(
       const z = sideSign * (0.03 + s * hHalfSpan);
       const chord =
         (hChordRoot * (1 - s) + hChordTip * s) * (1 - 0.35 * tipU);
-      const xCenter = hStabX + s * 0.14 * lengthScale + tipU * 0.08;
-      const yLift = hStabY + Math.pow(tipU, 1.5) * 0.065 * heightScale;
+      const xCenter = hStabX + s * 0.12 * lengthScale + tipU * 0.07;
+      const yLift = hStabY + Math.pow(tipU, 1.5) * 0.06 * heightScale;
       const interiorCenter = new THREE.Vector3(xCenter, yLift, z);
 
       const row: GridVertex[] = [];
@@ -679,7 +680,7 @@ export function buildSlingTsiGeometry(
         const p = j / pSteps;
         const isUpper = p <= 0.5;
         const xNorm = isUpper ? 1 - p * 2 : (p - 0.5) * 2;
-        const af = evaluateAirfoil(xNorm, 0.105, 0, 0, isUpper);
+        const af = evaluateAirfoil(xNorm, 0.095, 0, 0, isUpper);
         row.push({
           pos: new THREE.Vector3(
             xCenter + af.x * chord,
@@ -753,7 +754,7 @@ export function buildSlingTsiGeometry(
   );
 
   // 5. Aerodynamic Teardrop Wheel Fairings (Spats) at Exact POH Axle Coordinates:
-  // Nose Axle: 900mm from Spinner Tip; Main Axle: 900 + 1750 = 2650mm from Spinner Tip; Track: 2050mm (+/-1.025m)
+  //    Nose Axle: 900mm from Spinner Tip; Main Axle: 900 + 1750 = 2650mm from Spinner Tip; Track: 2050mm (+/-1.025m)
   const noseAxleX = xSpinnerTip + (cal.noseAxleStationM || 0.9) * lengthScale;
   const mainAxleX = noseAxleX + (cal.wheelbaseM || 1.75) * lengthScale;
   const halfTrackZ = ((cal.wheelTrackM || 2.05) * 0.5) * (wingspanM / 9.5);
@@ -786,7 +787,6 @@ export function buildSlingTsiGeometry(
         const theta = (j / vSteps) * Math.PI * 2;
         const cosT = Math.cos(theta);
         const sinT = Math.sin(theta);
-        // Flat bottom cut-out so tire protrudes cleanly below wheel pant
         const yFactor = cosT < -0.68 ? -0.68 : cosT;
         const y = cy + yDroop + yFactor * (height * 0.52) * rProfile;
         const z = cz + sinT * (width * 0.5) * rProfile;
@@ -804,24 +804,24 @@ export function buildSlingTsiGeometry(
   };
 
   if (cal.wheelPantsInstalled) {
-    // Nose wheel pant
-    addSculptedWheelPant(noseAxleX, yGround + 0.22, 0, 0.78, 0.33, 0.25);
-    // Port & Starboard main wheel pants
+    // Nose wheel pant (POH Side View: py=352..392 -> y = -0.82m..-1.12m, centered at yGround + 0.21m)
+    addSculptedWheelPant(noseAxleX, yGround + 0.21, 0, 0.74, 0.31, 0.24);
+    // Port & Starboard main wheel pants (POH Side View: py=356..392, centered at yGround + 0.22m)
     addSculptedWheelPant(
       mainAxleX,
-      yGround + 0.23,
+      yGround + 0.22,
       halfTrackZ,
-      0.86,
-      0.35,
-      0.27
+      0.8,
+      0.33,
+      0.26
     );
     addSculptedWheelPant(
       mainAxleX,
-      yGround + 0.23,
+      yGround + 0.22,
       -halfTrackZ,
-      0.86,
-      0.35,
-      0.27
+      0.8,
+      0.33,
+      0.26
     );
   }
 
@@ -839,7 +839,14 @@ export function buildSlingTsiGeometry(
     new THREE.Float32BufferAttribute(spatUvs, 2)
   );
 
-  // 6. Painted Aerodynamic Landing Gear Legs — Lofted directly from Fuselage Belly to Wheel Hubs!
+  // 6. Short, Correctly-Angled Aerodynamic Landing Gear Struts (Exact POH Front & Side View Measurements!)
+  //    In the POH Front View (py=181..201) and N916TS photo:
+  //    - Bottom of the cabin/wing belly is at y = -0.55m, and top of the wheel pants is at y = -0.82m
+  //      (only ~260mm of exposed strut height!).
+  //    - Nose Gear Strut: slants FORWARD from the lower cowling (s = 1.00m, y = -0.50m) down into
+  //      the nose wheel pant top (s = 0.90m, y = yGround + 0.24m).
+  //    - Main Gear Struts: emerge under the inboard wing/belly fairing at |z| = 0.56m, y = -0.50m
+  //      and angle outward at ~42 deg into the main wheel pants at |z| = 0.99m, y = yGround + 0.25m.
   const legPos: number[] = [];
   const legNorm: number[] = [];
   const legUvs: number[] = [];
@@ -853,14 +860,13 @@ export function buildSlingTsiGeometry(
     rxWheel: number,
     rzWheel: number
   ) => {
-    const sSteps = 18;
+    const sSteps = 16;
     const rSteps = 20;
     const grid: GridVertex[][] = [];
 
     for (let i = 0; i <= sSteps; i++) {
       const t = i / sSteps;
       const mt = 1 - t;
-      // Quadratic Bezier path from fuselage belly root to wheel pant top/hub
       const cx = mt * mt * pRoot.x + 2 * mt * t * pMid.x + t * t * pWheel.x;
       const cy = mt * mt * pRoot.y + 2 * mt * t * pMid.y + t * t * pWheel.y;
       const cz = mt * mt * pRoot.z + 2 * mt * t * pMid.z + t * t * pWheel.z;
@@ -886,42 +892,42 @@ export function buildSlingTsiGeometry(
     appendSmoothLoftedGrid(grid, true, legPos, legNorm, legUvs);
   };
 
-  // Nose Gear Leg: from forward lower cowling belly (y=-0.30) straight down into nose wheel pant hub (yGround + 0.20)
+  // Nose Gear Strut: raked forward from s=1.00m under cowling down to s=0.90m at nose wheel pant
+  const yNoseRoot = -0.49 * heightScale;
+  const yNoseWheel = yGround + 0.23;
   addLoftedGearLeg(
-    new THREE.Vector3(noseAxleX - 0.04 * lengthScale, -0.28 * heightScale, 0),
+    new THREE.Vector3(noseAxleX + 0.1 * lengthScale, yNoseRoot, 0),
     new THREE.Vector3(
-      noseAxleX - 0.015 * lengthScale,
-      0.5 * (-0.28 * heightScale + (yGround + 0.2)),
+      noseAxleX + 0.045 * lengthScale,
+      0.5 * (yNoseRoot + yNoseWheel),
       0
     ),
-    new THREE.Vector3(noseAxleX, yGround + 0.2, 0),
-    0.095,
-    0.048,
-    0.075,
-    0.042
+    new THREE.Vector3(noseAxleX - 0.01 * lengthScale, yNoseWheel, 0),
+    0.088,
+    0.044,
+    0.072,
+    0.038
   );
 
-  // Port & Starboard Main Gear Composite Bow Struts:
-  // Emerge from inboard fuselage belly (z = +/- 0.34m, y = -0.37m) and sweep OUTWARD & DOWNWARD
-  // directly into the top of the main wheel pants / wheel hubs (z = +/- halfTrackZ, y = yGround + 0.23m)!
+  // Port & Starboard Main Gear Struts: short stout composite bow from |z|=0.56m under wing root to |z|=0.99m at wheel pant
   for (const side of [-1, 1] as const) {
-    const zRoot = side * 0.34 * widthScale;
-    const zWheel = side * halfTrackZ;
-    const yRoot = -0.36 * heightScale;
-    const yWheel = yGround + 0.22;
+    const zRoot = side * 0.55 * widthScale;
+    const zWheel = side * (halfTrackZ - 0.03);
+    const yRoot = -0.49 * heightScale;
+    const yWheel = yGround + 0.25;
 
     addLoftedGearLeg(
-      new THREE.Vector3(mainAxleX - 0.06 * lengthScale, yRoot, zRoot),
+      new THREE.Vector3(mainAxleX - 0.05 * lengthScale, yRoot, zRoot),
       new THREE.Vector3(
         mainAxleX - 0.02 * lengthScale,
-        yRoot * 0.45 + yWheel * 0.55 + 0.06,
-        zRoot * 0.35 + zWheel * 0.65
+        yRoot * 0.48 + yWheel * 0.52 + 0.02,
+        zRoot * 0.45 + zWheel * 0.55
       ),
       new THREE.Vector3(mainAxleX, yWheel, zWheel),
-      0.075,
-      0.032,
-      0.058,
-      0.028
+      0.072,
+      0.03,
+      0.055,
+      0.026
     );
   }
 
@@ -939,17 +945,17 @@ export function buildSlingTsiGeometry(
     new THREE.Float32BufferAttribute(legUvs, 2)
   );
 
-  // 7. Smooth Ogive Bullet Spinner Cone (440mm long, radius 0.205m matching cowling front ring)
+  // 7. Smooth Ogive Bullet Spinner Cone (420mm long, radius 0.21m matching cowling front ring)
   const spinnerLen = xNoseCowl - xSpinnerTip;
   const spinnerPoints: THREE.Vector2[] = [];
   for (let i = 0; i <= 24; i++) {
     const u = i / 24;
-    const r = 0.205 * Math.pow(u, 0.62) * heightScale;
+    const r = 0.21 * Math.pow(u, 0.62) * heightScale;
     spinnerPoints.push(new THREE.Vector2(r, (0.5 - u) * spinnerLen));
   }
   const spinnerGeo = new THREE.LatheGeometry(spinnerPoints, 48);
   spinnerGeo.rotateZ(Math.PI * 0.5);
-  spinnerGeo.translate(xSpinnerTip + spinnerLen * 0.5, 0.03 * heightScale, 0);
+  spinnerGeo.translate(xSpinnerTip + spinnerLen * 0.5, 0.01 * heightScale, 0);
   spinnerGeo.computeVertexNormals();
 
   // 8. 3-Blade Constant-Speed Scimitar Propeller (1.82m diameter)
@@ -962,32 +968,30 @@ export function buildSlingTsiGeometry(
     blade.translate(0, propRadius * 0.5 + 0.09, 0);
     blade.rotateY(0.32);
     blade.rotateX(angle);
-    blade.translate(xNoseCowl - 0.07, 0.03 * heightScale, 0);
+    blade.translate(xNoseCowl - 0.07, 0.01 * heightScale, 0);
     bladeGeos.push(blade);
   }
   const propellerBladesGeo = mergeBufferGeometries(bladeGeos);
 
-  // 9. Dark Tires & Roof Whip VHF Antenna (no black blocks on cowling or cockpit!)
+  // 9. Dark Tires & Roof Whip VHF Antenna
   const darkDetailGeos: THREE.BufferGeometry[] = [];
 
-  // Nose Tire (touching ground at yGround)
-  const noseTire = new THREE.CylinderGeometry(0.165, 0.165, 0.105, 28);
+  const noseTire = new THREE.CylinderGeometry(0.16, 0.16, 0.105, 28);
   noseTire.rotateX(Math.PI * 0.5);
-  noseTire.translate(noseAxleX, yGround + 0.165, 0);
+  noseTire.translate(noseAxleX, yGround + 0.16, 0);
   darkDetailGeos.push(noseTire);
 
-  // Main Tires (touching ground at yGround, track = 2050mm)
   for (const side of [-1, 1]) {
-    const mainTire = new THREE.CylinderGeometry(0.185, 0.185, 0.125, 28);
+    const mainTire = new THREE.CylinderGeometry(0.175, 0.175, 0.12, 28);
     mainTire.rotateX(Math.PI * 0.5);
-    mainTire.translate(mainAxleX, yGround + 0.185, side * halfTrackZ);
+    mainTire.translate(mainAxleX, yGround + 0.175, side * halfTrackZ);
     darkDetailGeos.push(mainTire);
   }
 
-  // Whip VHF Antenna on upper rear cabin spine
+  // Whip VHF Antenna on upper rear cabin spine (at s = 3.85m, y = +0.46m per POH Side View)
   const antenna = new THREE.CylinderGeometry(0.004, 0.007, 0.44, 8);
   antenna.rotateZ(-0.62);
-  antenna.translate(xNoseCowl + fusLength * 0.55, 0.46 * heightScale, 0);
+  antenna.translate((-3.6 + 3.85) * lengthScale, 0.52 * heightScale, 0);
   darkDetailGeos.push(antenna);
 
   const gearStrutsAndTiresGeo = mergeBufferGeometries(darkDetailGeos);
