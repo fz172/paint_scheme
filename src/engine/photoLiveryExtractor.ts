@@ -385,8 +385,8 @@ export async function extractLiveryFromReferencePhoto(
       outlineColorHex: dominantBaseHex,
       heightInches: 11.5,
       slantDeg: 14,
-      positionX: 0.635,
-      positionY: 0.355,
+      positionX: 0.605,
+      positionY: 0.34,
     },
   };
 

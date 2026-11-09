@@ -193,8 +193,8 @@ export function evaluateSlingFuselageStation(t: number): {
   superellipseBotN: number;
   yMaxWidthLine: number;
 } {
-  // Convert normalized fuselage station t in [0, 1] to meters s from spinner tip [0.42m .. 7.00m]
-  const s = 0.42 + t * 6.58;
+  // Convert normalized fuselage station t in [0, 1] to meters s from spinner tip [0.42m .. 6.88m]
+  const s = 0.42 + t * 6.46;
 
   const spinnerCenterY = 0.01;
   const spinnerRadius = 0.21;
@@ -205,71 +205,79 @@ export function evaluateSlingFuselageStation(t: number): {
   let superellipseTopN = 2.15;
   let superellipseBotN = 2.35;
 
-  // 1. Upper Profile yTop(s) — Measured directly from POH Side View:
+  // 1. Upper Profile yTop(s) — Matched to POH Side View, N916TS (ref_side.jpg), and bare-metal N532SL (ref_tail.jpg):
   //    s=0.42m: +0.22m (behind spinner)
   //    s=1.45m: +0.30m (base of wrap-around windshield)
-  //    s=2.55m: +0.623m (cabin roof crown)
-  //    s=3.65m: +0.49m (rear of passenger window)
-  //    s=4.50m..7.00m: +0.295m (horizontal tailcone dorsal spine!)
+  //    s=2.50m: +0.605m (cabin roof crown)
+  //    s=3.60m: +0.36m (rear apex of teardrop passenger window)
+  //    s=3.60m..5.60m: slopes smoothly down along the tailcone spine to +0.065m just ahead of the dorsal fin
+  //    s=5.60m..6.88m: tapers from +0.065m to +0.02m at the tailcone tip right at the base of the rudder
   if (s < 1.45) {
     const u = (s - 0.42) / (1.45 - 0.42);
     yTop = spinnerCenterY + spinnerRadius + 0.08 * Math.pow(u, 0.72);
-  } else if (s < 2.55) {
-    const u = (s - 1.45) / (2.55 - 1.45);
-    yTop = 0.30 + 0.323 * Math.sin(u * Math.PI * 0.5);
-  } else if (s < 4.50) {
-    const u = (s - 2.55) / (4.50 - 2.55);
-    const smooth = u * u * (3 - 2 * u);
-    yTop = 0.623 - (0.623 - 0.295) * smooth;
+  } else if (s < 2.5) {
+    const u = (s - 1.45) / (2.5 - 1.45);
+    yTop = 0.3 + 0.305 * Math.sin(u * Math.PI * 0.5);
+  } else if (s < 3.6) {
+    const u = (s - 2.5) / (3.6 - 2.5);
+    yTop = 0.605 - (0.605 - 0.36) * Math.pow(u, 1.35);
+  } else if (s < 5.6) {
+    const u = (s - 3.6) / (5.6 - 3.6);
+    const smooth = u * (2 - u);
+    yTop = 0.36 - (0.36 - 0.065) * smooth;
   } else {
-    const u = (s - 4.50) / (7.00 - 4.50);
-    yTop = 0.295 - 0.025 * u;
+    const u = (s - 5.6) / (6.88 - 5.6);
+    yTop = 0.065 - 0.045 * u;
   }
 
-  // 2. Lower Belly Profile yBottom(s) — Measured directly from POH Side & Front Views:
+  // 2. Lower Belly Profile yBottom(s) — Slanted tailcone bottom with ZERO vertical drop at the tail tip:
   //    s=0.42m: -0.20m (behind spinner)
   //    s=0.95m: -0.52m (deep lower cowling & chin scoop)
-  //    s=1.80m..3.50m: -0.555m (deep cabin belly & center-section wing carry-through)
-  //    s=3.50m..7.00m: rises along 14-deg clearance line from -0.555m to -0.20m at s=7.00m
-  //    (giving a deep, muscular tailcone: 0.72m tall at mid-tailcone, 0.47m tall under the rudder!)
+  //    s=1.80m..3.30m: -0.55m (cabin belly & center-section wing carry-through)
+  //    s=3.30m..6.00m: slants steadily upward along the lower tailcone from -0.54m to -0.21m
+  //    s=6.00m..6.88m: slants upward under the horizontal stabilizer from -0.21m to +0.015m
+  //    meeting the slanted rudder trailing edge at s=6.88m with a pointed tip!
   if (s < 0.95) {
     const u = (s - 0.42) / (0.95 - 0.42);
     yBottom =
       spinnerCenterY -
       spinnerRadius -
       0.32 * Math.sin(Math.pow(u, 0.68) * Math.PI * 0.5);
-  } else if (s < 3.50) {
-    const u = (s - 0.95) / (3.50 - 0.95);
-    yBottom = -0.52 - 0.038 * Math.sin(u * Math.PI);
+  } else if (s < 3.3) {
+    const u = (s - 0.95) / (3.3 - 0.95);
+    yBottom = -0.52 - 0.035 * Math.sin(u * Math.PI);
+  } else if (s < 6.0) {
+    const u = (s - 3.3) / (6.0 - 3.3);
+    yBottom = -0.535 + (0.535 - 0.21) * Math.pow(u, 1.04);
   } else {
-    const u = (s - 3.50) / (7.00 - 3.50);
-    yBottom = -0.545 + 0.345 * Math.pow(u, 0.96);
+    const u = (s - 6.0) / (6.88 - 6.0);
+    yBottom = -0.21 + 0.225 * Math.pow(u, 1.1);
   }
 
-  // 3. Half-Width Profile halfWidth(s) — Measured directly from POH Top View (Page 2):
-  //    Cabin width = 1188mm (halfWidth = 0.594m) maintained from firewall across cabin (s=1.55m..3.55m),
-  //    then tapers smoothly along the tailcone to 0.085m at the rudder post.
+  // 3. Half-Width Profile halfWidth(s) — Tapers to a sleek knife-edge at s = 6.88m:
   if (s < 1.55) {
     const u = (s - 0.42) / (1.55 - 0.42);
     halfWidth = spinnerRadius + (0.585 - spinnerRadius) * Math.pow(u, 0.55);
     superellipseTopN = 2.0 + 0.35 * Math.sin(u * Math.PI);
     superellipseBotN = 2.0 + 0.35 * u;
-  } else if (s < 3.55) {
-    const u = (s - 1.55) / (3.55 - 1.55);
+  } else if (s < 3.45) {
+    const u = (s - 1.55) / (3.45 - 1.55);
     halfWidth = 0.585 + 0.012 * Math.sin(u * Math.PI);
-    superellipseTopN = 2.22;
-    superellipseBotN = 2.45;
+    superellipseTopN = 2.2;
+    superellipseBotN = 2.4;
   } else {
-    const u = (s - 3.55) / (7.00 - 3.55);
-    halfWidth = 0.585 * Math.pow(1 - u, 0.85) + 0.065 * (1 - 0.5 * u);
-    superellipseTopN = 2.15;
-    superellipseBotN = 2.2;
+    const u = (s - 3.45) / (6.88 - 3.45);
+    halfWidth = 0.585 * Math.pow(1 - u, 1.08) + 0.012 * (1 - u) + 0.006;
+    superellipseTopN = 2.05;
+    superellipseBotN = 2.05;
   }
 
   const yMaxWidthLine =
     s < 1.45
       ? spinnerCenterY + (0.04 - spinnerCenterY) * ((s - 0.42) / (1.45 - 0.42))
-      : 0.04;
+      : s < 3.45
+        ? 0.04
+        : 0.5 * (yTop + yBottom);
 
   return {
     yBottom,
@@ -356,7 +364,7 @@ export function buildSlingTsiGeometry(
   // Center aircraft around X = 0 (Spinner tip at -3.60m * lengthScale, Rudder TE tip at +3.60m * lengthScale)
   const xSpinnerTip = -3.6 * lengthScale;
   const xNoseCowl = (-3.6 + 0.42) * lengthScale;
-  const xFuselageEnd = (-3.6 + 7.0) * lengthScale;
+  const xFuselageEnd = (-3.6 + 6.88) * lengthScale;
   const xRudderTE = (-3.6 + 7.2) * lengthScale;
   const fusLength = xFuselageEnd - xNoseCowl;
 
@@ -449,14 +457,15 @@ export function buildSlingTsiGeometry(
   buildFuselageHalf(1);
   buildFuselageHalf(-1);
 
-  // 2. Build Slender Swept Vertical Stabilizer + Rudder (Exact POH Page 1 Pixel Measurements!)
-  //    At base (y = +0.26m): LE at s = 6.02m (with subtle dorsal fillet to s = 5.75m), TE at s = 7.01m (chord = 0.99m)
-  //    At tip  (y = +1.17m): LE at s = 6.63m, TE at s = 7.20m (tip chord = 0.57m)
-  //    Notice how the rudder trailing edge slants forward as it goes down (7.20m at top -> 7.01m at bottom),
-  //    and the airfoil is a slender 6.5% section!
-  const finBaseY = 0.24 * heightScale;
+  // 2. Build Slender Swept Vertical Stabilizer + Rudder (Matched to ref_tail.jpg, ref_side.jpg, and POH Page 1)
+  //    - Sits right on top of the tapered tailcone spine & horizontal stabilizer (finBaseY = +0.02m)
+  //    - Curved riveted dorsal fairing (v < 0.22) blends forward along the low tailcone spine to s = 5.64m
+  //    - Main fin leading edge sweeps from s = 6.00m at base to s = 6.75m at tip (y = +1.17m)
+  //    - Rudder trailing edge slants aft toward the top (~16 deg) from s = 6.88m at base to s = 7.20m at tip
+  //      (tip chord = 0.45m, mid chord = 0.66m, slender 5.6% airfoil!)
+  const finBaseY = 0.02 * heightScale;
   const finSpan = yFinTop - finBaseY;
-  const finLevels = 30;
+  const finLevels = 32;
   const finChordSteps = 28;
 
   const buildFinSide = (sideSign: 1 | -1) => {
@@ -466,17 +475,17 @@ export function buildSlingTsiGeometry(
       const v = i / finLevels;
       const y = finBaseY + v * finSpan;
 
-      // Subtle dorsal fin fillet only in the lowest 14% where fin blends into tailcone spine
+      // Smooth concave dorsal fin fillet in the lowest 22% (visible in ref_tail.jpg)
       const dorsalExt =
-        v < 0.14 ? Math.pow(1 - v / 0.14, 2.2) * 0.28 * lengthScale : 0;
+        v < 0.22 ? Math.pow(1 - v / 0.22, 2.3) * 0.36 * lengthScale : 0;
 
-      // Exact POH leading edge: s=6.02m at base -> s=6.63m at tip
-      const leX = (-3.6 + 6.02 + v * 0.61) * lengthScale - dorsalExt;
-      // Exact POH rudder trailing edge: s=7.01m at base -> s=7.20m at tip (slants aft toward top!)
-      const teX = (-3.6 + 7.01 + v * 0.19) * lengthScale;
-      const chord = Math.max(0.25, teX - leX);
-      // Slender 6.5% tail section (tapers to 5.0% at tip)
-      const thickness = 0.065 * (1 - 0.25 * v);
+      // Swept leading edge: s=6.00m at base -> s=6.75m at tip
+      const leX = (-3.6 + 6.0 + v * 0.75) * lengthScale - dorsalExt;
+      // Slanted rudder trailing edge: s=6.88m at base -> s=7.20m at tip (slants forward at the bottom!)
+      const teX = (-3.6 + 6.88 + v * 0.32) * lengthScale;
+      const chord = Math.max(0.24, teX - leX);
+      // Slender 5.6% tail airfoil section
+      const thickness = 0.056 * (1 - 0.25 * v);
 
       const row: GridVertex[] = [];
       for (let j = 0; j <= finChordSteps; j++) {
@@ -649,15 +658,15 @@ export function buildSlingTsiGeometry(
   buildWingHalf(1);
   buildWingHalf(-1);
 
-  // 4. Horizontal Stabilizer & Elevator (POH Page 2: 3095mm span, 921mm chord + raked tips)
+  // 4. Horizontal Stabilizer & Elevator (POH Page 2: 3095mm span, 921mm chord, flat fiberglass tip cap per ref_tail.jpg!)
   const hStabPos: number[] = [];
   const hStabNorm: number[] = [];
   const hStabUvs: number[] = [];
   const hHalfSpan = ((cal.hStabSpanM || 3.095) * 0.5) * (wingspanM / 9.5);
   const hChordRoot = (cal.hStabChordM || 0.921) * lengthScale;
-  const hChordTip = hChordRoot * 0.74;
-  const hStabX = (-3.6 + 6.45) * lengthScale;
-  const hStabY = 0.06 * heightScale;
+  const hChordTip = hChordRoot * 0.76;
+  const hStabX = (-3.6 + 6.32) * lengthScale;
+  const hStabY = 0.0 * heightScale;
 
   const buildHStabHalf = (sideSign: 1 | -1) => {
     const sSteps = 20;
@@ -665,14 +674,15 @@ export function buildSlingTsiGeometry(
     const grid: GridVertex[][] = [];
     for (let i = 0; i <= sSteps; i++) {
       const s = i / sSteps;
-      const isTipFin = s >= 0.88;
-      const tipU = isTipFin ? (s - 0.88) / 0.12 : 0;
+      const isTipCap = s >= 0.92;
+      const tipU = isTipCap ? (s - 0.92) / 0.08 : 0;
 
-      const z = sideSign * (0.03 + s * hHalfSpan);
+      const z = sideSign * (0.02 + s * hHalfSpan);
       const chord =
-        (hChordRoot * (1 - s) + hChordTip * s) * (1 - 0.35 * tipU);
-      const xCenter = hStabX + s * 0.12 * lengthScale + tipU * 0.07;
-      const yLift = hStabY + Math.pow(tipU, 1.5) * 0.06 * heightScale;
+        (hChordRoot * (1 - s * 0.22) + hChordTip * (s * 0.22)) *
+        (1 - 0.45 * Math.pow(tipU, 1.6));
+      const xCenter = hStabX + s * 0.06 * lengthScale + tipU * 0.04;
+      const yLift = hStabY;
       const interiorCenter = new THREE.Vector3(xCenter, yLift, z);
 
       const row: GridVertex[] = [];
