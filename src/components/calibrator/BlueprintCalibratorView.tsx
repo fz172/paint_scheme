@@ -4,15 +4,53 @@ import React, { useRef, useState } from "react";
 import {
   Camera,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Compass,
+  FileText,
   FileUp,
   RotateCcw,
   Ruler,
   Sparkles,
   Upload,
+  Wand2,
 } from "lucide-react";
+import { jsPDF } from "jspdf";
 import { useLiveryStore } from "@/store/useLiveryStore";
 import { evaluateSlingFuselageStation } from "@/engine/slingTsiGeometry";
+import {
+  deriveProportionalDimensionsFromReferenceRuler,
+  getRulerPixelLength,
+  ParsedBlueprintResult,
+  parseDrawingFile,
+} from "@/engine/blueprintParser";
+import { Point2D, RulerCalibrationLine } from "@/types/livery";
+
+type DragRulerHandle = {
+  rulerId: string;
+  endpoint: "p1" | "p2";
+} | null;
+
+const RULER_COLORS: Record<
+  RulerCalibrationLine["axis"],
+  { stroke: string; badgeBg: string; text: string }
+> = {
+  LENGTH: {
+    stroke: "#38BDF8",
+    badgeBg: "#0F172A",
+    text: "#7DD3FC",
+  },
+  HEIGHT: {
+    stroke: "#34D399",
+    badgeBg: "#0F172A",
+    text: "#6EE7B7",
+  },
+  WINGSPAN: {
+    stroke: "#FBBF24",
+    badgeBg: "#0F172A",
+    text: "#FDE68A",
+  },
+};
 
 export default function BlueprintCalibratorView() {
   const calibration = useLiveryStore((s) => s.calibration);
@@ -22,17 +60,140 @@ export default function BlueprintCalibratorView() {
   );
   const setActiveWorkspaceTab = useLiveryStore((s) => s.setActiveWorkspaceTab);
 
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [parsedDrawing, setParsedDrawing] =
+    useState<ParsedBlueprintResult | null>(null);
+  const [isParsingFile, setIsParsingFile] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
+
+  const [dragHandle, setDragHandle] = useState<DragRulerHandle>(null);
   const [isReconstructing, setIsReconstructing] = useState(false);
   const [reconStatus, setReconStatus] = useState<string | null>(null);
 
   const blueprintInputRef = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const overlaySvgRef = useRef<SVGSVGElement>(null);
 
-  const handleBlueprintUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleProcessDrawingFile = async (file: File, pageNumber = 1) => {
+    setIsParsingFile(true);
+    setParseError(null);
+    try {
+      const result = await parseDrawingFile(file, pageNumber, {
+        wingspanM: calibration.wingspanM,
+        lengthM: calibration.lengthM,
+        heightM: calibration.heightM,
+      });
+      setUploadedFile(file);
+      setParsedDrawing(result);
+      updateCalibration({
+        customBlueprintSideUrl: result.renderedDataUrl,
+        rulers: result.suggestedRulers,
+      });
+    } catch (err) {
+      setParseError(
+        err instanceof Error
+          ? err.message
+          : "Failed to parse 3D drawing file."
+      );
+    } finally {
+      setIsParsingFile(false);
+    }
+  };
+
+  const handleBlueprintUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    updateCalibration({ customBlueprintSideUrl: url });
+    await handleProcessDrawingFile(file, 1);
+  };
+
+  const handleChangePdfPage = async (nextPage: number) => {
+    if (!uploadedFile || !parsedDrawing) return;
+    const clamped = Math.max(
+      1,
+      Math.min(parsedDrawing.totalPages, nextPage)
+    );
+    await handleProcessDrawingFile(uploadedFile, clamped);
+  };
+
+  /**
+   * Generates a real 2-page Sling TSi 3-View Engineering Blueprint PDF in memory
+   * and feeds it straight through the PDF parser so the user can test PDF parsing with 1 click!
+   */
+  const handleLoadSamplePdfBlueprint = async () => {
+    const doc = new jsPDF({
+      orientation: "landscape",
+      unit: "mm",
+      format: "a4",
+    });
+
+    // Page 1: Cover / Spec Page
+    doc.setFillColor(255, 255, 255);
+    doc.rect(0, 0, 297, 210, "F");
+    doc.setDrawColor(30, 41, 59);
+    doc.setLineWidth(0.6);
+    doc.rect(10, 10, 277, 190);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(15, 23, 42);
+    doc.text(
+      "SLING AIRCRAFT — SLING TSi 3-VIEW GENERAL ARRANGEMENT DRAWING (PDF)",
+      18,
+      22
+    );
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(
+      "Scale: 1:50  |  Wingspan: 9.53 m (31.27 ft)  |  Length: 7.175 m (23.54 ft)  |  Height: 2.45 m (8.04 ft)",
+      18,
+      30
+    );
+
+    // Draw Side View Silhouette on PDF
+    doc.setDrawColor(15, 23, 42);
+    doc.setLineWidth(0.7);
+    let prevX = 30;
+    let prevY = 95;
+    for (let i = 1; i <= 40; i++) {
+      const t = (i / 40) * 0.78;
+      const st = evaluateSlingFuselageStation(t);
+      const x = 30 + t * 135;
+      const y = 95 - st.yTop * 32;
+      doc.line(prevX, prevY, x, y);
+      prevX = x;
+      prevY = y;
+    }
+    doc.line(prevX, prevY, 158, 62);
+    doc.line(158, 62, 170, 62);
+    doc.line(170, 62, 168, 95);
+    prevX = 168;
+    prevY = 95;
+    for (let i = 40; i >= 0; i--) {
+      const t = i / 40;
+      const st = evaluateSlingFuselageStation(t);
+      const x = 30 + t * 135;
+      const y = 95 - st.yBottom * 32;
+      doc.line(prevX, prevY, x, y);
+      prevX = x;
+      prevY = y;
+    }
+
+    // Draw Top Planform on PDF
+    const cx = 230;
+    const cy = 110;
+    doc.rect(cx - 48, cy - 10, 96, 16);
+    doc.ellipse(cx, cy + 5, 6, 42);
+    doc.rect(cx - 18, cy + 36, 36, 8);
+
+    const pdfBlob = doc.output("blob");
+    const samplePdfFile = new File(
+      [pdfBlob],
+      "Sling_TSi_POH_3View_Drawing.pdf",
+      { type: "application/pdf" }
+    );
+    await handleProcessDrawingFile(samplePdfFile, 1);
   };
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -44,10 +205,80 @@ export default function BlueprintCalibratorView() {
     });
   };
 
+  const getNormalizedSvgCoords = (
+    e: React.PointerEvent<SVGSVGElement>
+  ): Point2D => {
+    const svg = overlaySvgRef.current;
+    if (!svg) return { x: 0.5, y: 0.5 };
+    const rect = svg.getBoundingClientRect();
+    const x = Math.max(
+      0.02,
+      Math.min(0.98, (e.clientX - rect.left) / rect.width)
+    );
+    const y = Math.max(
+      0.02,
+      Math.min(0.98, (e.clientY - rect.top) / rect.height)
+    );
+    return { x: Number(x.toFixed(3)), y: Number(y.toFixed(3)) };
+  };
+
+  const handleRulerPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!dragHandle) return;
+    const pt = getNormalizedSvgCoords(e);
+    const nextRulers = calibration.rulers.map((r) =>
+      r.id === dragHandle.rulerId
+        ? { ...r, [dragHandle.endpoint]: pt }
+        : r
+    );
+    updateCalibration({ rulers: nextRulers });
+  };
+
+  const handleRulerValueChange = (
+    axis: RulerCalibrationLine["axis"],
+    meters: number
+  ) => {
+    const clamped = Math.max(0.5, Math.min(30, meters || 1));
+    const nextRulers = calibration.rulers.map((r) =>
+      r.axis === axis ? { ...r, measuredMeters: clamped } : r
+    );
+    const dimPatch: Partial<typeof calibration> = { rulers: nextRulers };
+    if (axis === "WINGSPAN") dimPatch.wingspanM = clamped;
+    if (axis === "LENGTH") dimPatch.lengthM = clamped;
+    if (axis === "HEIGHT") dimPatch.heightM = clamped;
+    updateCalibration(dimPatch);
+  };
+
+  const handleDeriveAllFromReferenceRuler = (
+    refAxis: "WINGSPAN" | "LENGTH" | "HEIGHT"
+  ) => {
+    const wPx = parsedDrawing?.widthPx || 960;
+    const hPx = parsedDrawing?.heightPx || 360;
+    const derived = deriveProportionalDimensionsFromReferenceRuler(
+      calibration.rulers,
+      refAxis,
+      wPx,
+      hPx
+    );
+    if (!derived) return;
+    const nextRulers = calibration.rulers.map((r) => {
+      if (r.axis === "WINGSPAN")
+        return { ...r, measuredMeters: derived.wingspanM };
+      if (r.axis === "LENGTH")
+        return { ...r, measuredMeters: derived.lengthM };
+      if (r.axis === "HEIGHT")
+        return { ...r, measuredMeters: derived.heightM };
+      return r;
+    });
+    updateCalibration({
+      ...derived,
+      rulers: nextRulers,
+    });
+  };
+
   const triggerCalibrationAndLoft = () => {
     setIsReconstructing(true);
     setReconStatus(
-      "Step 1/3: Extracting 3-view orthographic contours & scaling to ruler datums..."
+      "Step 1/3: Parsing 3-view blueprint rulers & pixel-to-meter datum ratios..."
     );
     setTimeout(() => {
       setReconStatus(
@@ -66,7 +297,6 @@ export default function BlueprintCalibratorView() {
     }, 1450);
   };
 
-  // Build side contour path for blueprint schematic preview
   const buildSideBlueprintPath = () => {
     const pts: string[] = [];
     for (let i = 0; i <= 50; i++) {
@@ -88,6 +318,9 @@ export default function BlueprintCalibratorView() {
     return pts.join(" ");
   };
 
+  const canvasW = parsedDrawing?.widthPx || 960;
+  const canvasH = parsedDrawing?.heightPx || 360;
+
   return (
     <div className="w-full h-full overflow-y-auto bg-slate-950 text-slate-100 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -96,20 +329,24 @@ export default function BlueprintCalibratorView() {
           <div>
             <div className="flex items-center gap-2 text-sky-400 text-xs font-semibold uppercase tracking-wider mb-1">
               <Compass className="w-4 h-4" />
-              Pipeline A: 3-View Blueprint & Photo-to-3D Lofting Engine
+              Pipeline A: Multi-Format 3D Drawing (PDF / Image) & Photo Calibrator
             </div>
             <h2 className="text-xl font-bold text-white">
               Sling TSi Airframe Calibration & 3D Reconstruction
             </h2>
             <p className="text-sm text-slate-400 mt-0.5">
-              Calibrate orthographic 3-view drawings and walkaround photos with physical measurements to loft a millimeter-accurate, UV-unwrapped 3D model.
+              Upload 3-view technical drawings in <strong>PDF (.pdf)</strong> or <strong>Image (.png, .jpg, .webp, .svg, .bmp)</strong> formats, position the 2-point calibration rulers, and loft your 3D aircraft model.
             </p>
           </div>
 
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={resetSlingFactoryCalibration}
+              onClick={() => {
+                setUploadedFile(null);
+                setParsedDrawing(null);
+                resetSlingFactoryCalibration();
+              }}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition"
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -136,241 +373,357 @@ export default function BlueprintCalibratorView() {
           </div>
         )}
 
+        {parseError && (
+          <div className="p-4 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs font-mono">
+            {parseError}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left 7 Cols: Interactive 3-View Blueprint & Ruler Canvas + Photo Upload */}
+          {/* Left 7 Cols: Interactive PDF / Image Blueprint & Draggable Rulers */}
           <div className="lg:col-span-7 space-y-6">
-            {/* 3-View Technical Drawing Card */}
             <div className="rounded-xl bg-slate-900 border border-slate-800 overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-900/60">
+              {/* Card Header */}
+              <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-slate-800 bg-slate-900/60">
                 <div className="flex items-center gap-2">
                   <Ruler className="w-4 h-4 text-sky-400" />
                   <span className="text-xs font-semibold uppercase tracking-wider text-slate-200">
-                    3-View Orthographic Blueprint & Datum Calibration
+                    3-View Drawing Parser (Supports .PDF, .PNG, .JPG, .WEBP, .SVG, .BMP)
                   </span>
                 </div>
-                <div>
+
+                <div className="flex items-center gap-2">
                   <input
                     ref={blueprintInputRef}
                     type="file"
-                    accept="image/*,.svg"
+                    accept=".pdf,application/pdf,image/png,image/jpeg,image/webp,image/svg+xml,image/bmp,image/gif,image/avif,.png,.jpg,.jpeg,.webp,.svg,.bmp"
                     className="hidden"
                     onChange={handleBlueprintUpload}
                   />
                   <button
                     type="button"
+                    onClick={handleLoadSamplePdfBlueprint}
+                    disabled={isParsingFile}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-[11px] text-emerald-300 border border-slate-700 transition"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    Test Sample POH .PDF
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => blueprintInputRef.current?.click()}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-xs text-sky-300 border border-slate-700 transition"
+                    disabled={isParsingFile}
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-sky-500/20 hover:bg-sky-500/30 text-xs text-sky-300 border border-sky-500/40 font-medium transition"
                   >
                     <FileUp className="w-3.5 h-3.5" />
-                    Upload Custom 3-View Drawing
+                    {isParsingFile
+                      ? "Parsing Drawing..."
+                      : "Upload 3-View PDF or Image"}
                   </button>
                 </div>
               </div>
 
-              <div className="relative p-4 bg-slate-950 flex flex-col items-center">
-                {calibration.customBlueprintSideUrl ? (
-                  <div className="relative w-full h-72 flex items-center justify-center bg-slate-900 rounded-lg overflow-hidden border border-slate-800">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={calibration.customBlueprintSideUrl}
-                      alt="Custom Aircraft Blueprint"
-                      className="max-h-full max-w-full object-contain opacity-90"
+              {/* Metadata & Multi-Page PDF Controls Bar (when a file is loaded) */}
+              {parsedDrawing && (
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-slate-950 border-b border-slate-800 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded bg-sky-500/20 border border-sky-500/40 font-mono text-[10px] text-sky-300 font-bold">
+                      {parsedDrawing.fileType}
+                    </span>
+                    <span className="font-medium text-slate-200 truncate max-w-[220px]">
+                      {parsedDrawing.fileName}
+                    </span>
+                    <span className="text-slate-500 font-mono text-[11px]">
+                      ({parsedDrawing.widthPx}×{parsedDrawing.heightPx}px •{" "}
+                      {parsedDrawing.detectedBackground === "LIGHT_POH"
+                        ? "Light POH Sheet"
+                        : "Dark CAD Blueprint"}
+                      )
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {parsedDrawing.fileType === "PDF" &&
+                      parsedDrawing.totalPages > 1 && (
+                        <div className="flex items-center gap-1 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                          <button
+                            type="button"
+                            disabled={parsedDrawing.pageNumber <= 1}
+                            onClick={() =>
+                              handleChangePdfPage(parsedDrawing.pageNumber - 1)
+                            }
+                            className="p-0.5 text-slate-400 hover:text-white disabled:opacity-30"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                          </button>
+                          <span className="font-mono text-[11px] text-slate-300">
+                            PDF Page {parsedDrawing.pageNumber} /{" "}
+                            {parsedDrawing.totalPages}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={
+                              parsedDrawing.pageNumber >=
+                              parsedDrawing.totalPages
+                            }
+                            onClick={() =>
+                              handleChangePdfPage(parsedDrawing.pageNumber + 1)
+                            }
+                            className="p-0.5 text-slate-400 hover:text-white disabled:opacity-30"
+                          >
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUploadedFile(null);
+                        setParsedDrawing(null);
+                        updateCalibration({ customBlueprintSideUrl: null });
+                      }}
+                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300"
+                    >
+                      Use Built-in Schematic
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Interactive Blueprint Viewport with Draggable Calibration Rulers */}
+              <div
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={async (e) => {
+                  e.preventDefault();
+                  const file = e.dataTransfer.files?.[0];
+                  if (file) await handleProcessDrawingFile(file, 1);
+                }}
+                className="relative p-4 bg-slate-950 flex flex-col items-center select-none"
+              >
+                <svg
+                  ref={overlaySvgRef}
+                  viewBox={`0 0 ${canvasW} ${canvasH}`}
+                  className="w-full h-auto max-h-[420px] rounded-lg border border-slate-800 bg-[#070D19] touch-none cursor-crosshair"
+                  onPointerMove={handleRulerPointerMove}
+                  onPointerUp={() => setDragHandle(null)}
+                  onPointerLeave={() => setDragHandle(null)}
+                >
+                  <defs>
+                    <pattern
+                      id="cal-grid"
+                      width="30"
+                      height="30"
+                      patternUnits="userSpaceOnUse"
+                    >
+                      <path
+                        d="M 30 0 L 0 0 0 30"
+                        fill="none"
+                        stroke="#162238"
+                        strokeWidth="0.8"
+                      />
+                    </pattern>
+                  </defs>
+
+                  {calibration.customBlueprintSideUrl ? (
+                    <image
+                      href={calibration.customBlueprintSideUrl}
+                      x={0}
+                      y={0}
+                      width={canvasW}
+                      height={canvasH}
+                      preserveAspectRatio="none"
                     />
+                  ) : (
+                    <>
+                      <rect
+                        width={canvasW}
+                        height={canvasH}
+                        fill="url(#cal-grid)"
+                      />
+                      <text
+                        x="30"
+                        y="28"
+                        fill="#94A3B8"
+                        fontSize="11"
+                        fontWeight="bold"
+                        fontFamily="monospace"
+                      >
+                        1. SIDE ELEVATION (SLING TSi POH REFERENCE) — DRAG RULER HANDLES TO CALIBRATE
+                      </text>
+                      <path
+                        d={buildSideBlueprintPath()}
+                        fill="rgba(56, 189, 248, 0.08)"
+                        stroke="#38BDF8"
+                        strokeWidth="1.8"
+                      />
+                      <line
+                        x1="70"
+                        y1="38"
+                        x2="70"
+                        y2="265"
+                        stroke="#F97316"
+                        strokeDasharray="4 4"
+                        strokeWidth="1.3"
+                      />
+                      <text
+                        x="74"
+                        y="50"
+                        fill="#FB923C"
+                        fontSize="10"
+                        fontFamily="monospace"
+                      >
+                        DATUM X=0.00m (SPINNER)
+                      </text>
+
+                      <text
+                        x="695"
+                        y="28"
+                        fill="#94A3B8"
+                        fontSize="11"
+                        fontWeight="bold"
+                        fontFamily="monospace"
+                      >
+                        2. TOP PLANFORM
+                      </text>
+                      <g transform="translate(820, 175)">
+                        <polygon
+                          points="-115,-20 -55,-26 55,-26 115,-20 115,4 55,12 -55,12 -115,4"
+                          fill="rgba(56, 189, 248, 0.08)"
+                          stroke="#38BDF8"
+                          strokeWidth="1.6"
+                        />
+                        <ellipse
+                          cx="0"
+                          cy="0"
+                          rx="14"
+                          ry="95"
+                          fill="#0B1528"
+                          stroke="#38BDF8"
+                          strokeWidth="1.6"
+                        />
+                        <polygon
+                          points="-38,76 38,76 35,90 -35,90"
+                          fill="rgba(56, 189, 248, 0.08)"
+                          stroke="#38BDF8"
+                          strokeWidth="1.4"
+                        />
+                      </g>
+                    </>
+                  )}
+
+                  {/* Interactive Draggable 2-Point Calibration Rulers Overlay */}
+                  {calibration.rulers.map((ruler) => {
+                    const c = RULER_COLORS[ruler.axis];
+                    const x1 = ruler.p1.x * canvasW;
+                    const y1 = ruler.p1.y * canvasH;
+                    const x2 = ruler.p2.x * canvasW;
+                    const y2 = ruler.p2.y * canvasH;
+                    const midX = (x1 + x2) * 0.5;
+                    const midY = (y1 + y2) * 0.5;
+                    const pxLen = getRulerPixelLength(ruler, canvasW, canvasH);
+                    const handleRadius = Math.max(6, Math.round(canvasW * 0.008));
+                    const fontSize = Math.max(11, Math.round(canvasW * 0.012));
+
+                    return (
+                      <g key={ruler.id}>
+                        <line
+                          x1={x1}
+                          y1={y1}
+                          x2={x2}
+                          y2={y2}
+                          stroke={c.stroke}
+                          strokeWidth={Math.max(2, canvasW * 0.0025)}
+                        />
+                        {/* Midpoint Label Pill */}
+                        <rect
+                          x={midX - fontSize * 6.5}
+                          y={midY - fontSize * 1.1}
+                          width={fontSize * 13}
+                          height={fontSize * 1.8}
+                          rx={4}
+                          fill={c.badgeBg}
+                          fillOpacity={0.9}
+                          stroke={c.stroke}
+                          strokeWidth={1.2}
+                        />
+                        <text
+                          x={midX}
+                          y={midY + fontSize * 0.15}
+                          fill={c.text}
+                          fontSize={fontSize}
+                          fontWeight="bold"
+                          textAnchor="middle"
+                          fontFamily="monospace"
+                        >
+                          {ruler.axis}: {ruler.measuredMeters.toFixed(2)}m (
+                          {Math.round(pxLen)}px)
+                        </text>
+
+                        {/* Draggable P1 & P2 Endpoints */}
+                        {(["p1", "p2"] as const).map((epKey) => {
+                          const cx = epKey === "p1" ? x1 : x2;
+                          const cy = epKey === "p1" ? y1 : y2;
+                          return (
+                            <g
+                              key={epKey}
+                              transform={`translate(${cx}, ${cy})`}
+                              onPointerDown={(e) => {
+                                e.stopPropagation();
+                                (e.target as Element).setPointerCapture(
+                                  e.pointerId
+                                );
+                                setDragHandle({
+                                  rulerId: ruler.id,
+                                  endpoint: epKey,
+                                });
+                              }}
+                              className="cursor-grab active:cursor-grabbing"
+                            >
+                              <circle
+                                r={handleRadius * 1.6}
+                                fill={c.stroke}
+                                fillOpacity={0.25}
+                                stroke={c.stroke}
+                                strokeWidth={1.8}
+                              />
+                              <circle r={handleRadius * 0.65} fill="#FFFFFF" />
+                            </g>
+                          );
+                        })}
+                      </g>
+                    );
+                  })}
+                </svg>
+
+                {/* Ruler Scale & Auto-Proportion Sync Footer */}
+                <div className="w-full mt-3 pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <span className="text-slate-400">
+                    Drag ruler endpoints onto your drawing&apos;s wingtips, nose/tail, and fin tip, then sync scale:
+                  </span>
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() =>
-                        updateCalibration({ customBlueprintSideUrl: null })
+                        handleDeriveAllFromReferenceRuler("WINGSPAN")
                       }
-                      className="absolute top-2 right-2 px-2.5 py-1 rounded bg-slate-900/90 text-xs text-slate-300 border border-slate-700"
+                      className="flex items-center gap-1 px-2.5 py-1 rounded bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-[11px] font-medium transition"
                     >
-                      Use Built-in Sling TSi Schematic
+                      <Wand2 className="w-3 h-3" />
+                      Sync Scale from Wingspan Ruler
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleDeriveAllFromReferenceRuler("LENGTH")
+                      }
+                      className="flex items-center gap-1 px-2.5 py-1 rounded bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/40 text-sky-300 text-[11px] font-medium transition"
+                    >
+                      <Wand2 className="w-3 h-3" />
+                      Sync Scale from Length Ruler
                     </button>
                   </div>
-                ) : (
-                  <svg
-                    viewBox="0 0 960 360"
-                    className="w-full h-auto rounded-lg border border-slate-800/80 bg-[#070D19]"
-                  >
-                    <defs>
-                      <pattern
-                        id="cal-grid"
-                        width="30"
-                        height="30"
-                        patternUnits="userSpaceOnUse"
-                      >
-                        <path
-                          d="M 30 0 L 0 0 0 30"
-                          fill="none"
-                          stroke="#162238"
-                          strokeWidth="0.8"
-                        />
-                      </pattern>
-                    </defs>
-                    <rect width="960" height="360" fill="url(#cal-grid)" />
-
-                    {/* SIDE VIEW SCHEMATIC (LEFT) */}
-                    <text
-                      x="30"
-                      y="28"
-                      fill="#94A3B8"
-                      fontSize="11"
-                      fontWeight="bold"
-                      fontFamily="monospace"
-                    >
-                      1. SIDE ELEVATION (SLING TSi POH REFERENCE)
-                    </text>
-
-                    <path
-                      d={buildSideBlueprintPath()}
-                      fill="rgba(56, 189, 248, 0.08)"
-                      stroke="#38BDF8"
-                      strokeWidth="1.8"
-                    />
-
-                    {/* Datum X=0 Spinner Vertical Line */}
-                    <line
-                      x1="70"
-                      y1="38"
-                      x2="70"
-                      y2="265"
-                      stroke="#F97316"
-                      strokeDasharray="4 4"
-                      strokeWidth="1.3"
-                    />
-                    <text
-                      x="74"
-                      y="50"
-                      fill="#FB923C"
-                      fontSize="10"
-                      fontFamily="monospace"
-                    >
-                      DATUM X=0.00m (SPINNER)
-                    </text>
-
-                    {/* Overall Length Calibration Ruler */}
-                    <g>
-                      <line
-                        x1="70"
-                        y1="255"
-                        x2="635"
-                        y2="255"
-                        stroke="#38BDF8"
-                        strokeWidth="2"
-                      />
-                      <circle cx="70" cy="255" r="4" fill="#38BDF8" />
-                      <circle cx="635" cy="255" r="4" fill="#38BDF8" />
-                      <rect
-                        x="260"
-                        y="243"
-                        width="190"
-                        height="22"
-                        rx="4"
-                        fill="#0F172A"
-                        stroke="#0284C7"
-                      />
-                      <text
-                        x="355"
-                        y="258"
-                        fill="#7DD3FC"
-                        fontSize="11"
-                        fontWeight="bold"
-                        textAnchor="middle"
-                        fontFamily="monospace"
-                      >
-                        LENGTH: {calibration.lengthM.toFixed(3)} m (
-                        {(calibration.lengthM * 3.28084).toFixed(2)} ft)
-                      </text>
-                    </g>
-
-                    {/* Overall Height Calibration Ruler */}
-                    <g>
-                      <line
-                        x1="652"
-                        y1="45"
-                        x2="652"
-                        y2="215"
-                        stroke="#34D399"
-                        strokeWidth="2"
-                      />
-                      <circle cx="652" cy="45" r="4" fill="#34D399" />
-                      <circle cx="652" cy="215" r="4" fill="#34D399" />
-                      <text
-                        x="644"
-                        y="36"
-                        fill="#6EE7B7"
-                        fontSize="11"
-                        fontWeight="bold"
-                        textAnchor="end"
-                        fontFamily="monospace"
-                      >
-                        HEIGHT: {calibration.heightM.toFixed(2)} m
-                      </text>
-                    </g>
-
-                    {/* TOP PLANFORM SCHEMATIC (RIGHT) */}
-                    <text
-                      x="695"
-                      y="28"
-                      fill="#94A3B8"
-                      fontSize="11"
-                      fontWeight="bold"
-                      fontFamily="monospace"
-                    >
-                      2. TOP PLANFORM
-                    </text>
-
-                    {/* Top Planform Wings & Fuselage */}
-                    <g transform="translate(820, 175)">
-                      {/* Wings */}
-                      <polygon
-                        points="-115,-20 -55,-26 55,-26 115,-20 115,4 55,12 -55,12 -115,4"
-                        fill="rgba(56, 189, 248, 0.08)"
-                        stroke="#38BDF8"
-                        strokeWidth="1.6"
-                      />
-                      {/* Fuselage */}
-                      <ellipse
-                        cx="0"
-                        cy="0"
-                        rx="14"
-                        ry="95"
-                        fill="#0B1528"
-                        stroke="#38BDF8"
-                        strokeWidth="1.6"
-                      />
-                      {/* Horizontal Stab */}
-                      <polygon
-                        points="-38,76 38,76 35,90 -35,90"
-                        fill="rgba(56, 189, 248, 0.08)"
-                        stroke="#38BDF8"
-                        strokeWidth="1.4"
-                      />
-                      {/* Wingspan Ruler */}
-                      <line
-                        x1="-115"
-                        y1="125"
-                        x2="115"
-                        y2="125"
-                        stroke="#FBBF24"
-                        strokeWidth="2"
-                      />
-                      <circle cx="-115" cy="125" r="4" fill="#FBBF24" />
-                      <circle cx="115" cy="125" r="4" fill="#FBBF24" />
-                      <text
-                        x="0"
-                        y="144"
-                        fill="#FDE68A"
-                        fontSize="11"
-                        fontWeight="bold"
-                        textAnchor="middle"
-                        fontFamily="monospace"
-                      >
-                        SPAN: {calibration.wingspanM.toFixed(2)} m (
-                        {(calibration.wingspanM * 3.28084).toFixed(2)} ft)
-                      </text>
-                    </g>
-                  </svg>
-                )}
+                </div>
               </div>
             </div>
 
@@ -441,7 +794,7 @@ export default function BlueprintCalibratorView() {
                     Parametric Airframe Dimensions
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Adjusting these measurements immediately re-lofts the 3D Sling TSi geometry
+                    Adjusting these measurements or rulers immediately re-lofts the 3D Sling TSi geometry
                   </p>
                 </div>
                 <span className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/40 text-[11px] font-mono text-emerald-300 flex items-center gap-1">
@@ -451,14 +804,27 @@ export default function BlueprintCalibratorView() {
 
               {/* Wingspan */}
               <div className="space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-300 font-medium">
-                    Wingspan (Tip-to-Tip)
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-amber-300 font-medium">
+                    Wingspan Ruler (Tip-to-Tip)
                   </span>
-                  <span className="font-mono text-sky-400">
-                    {calibration.wingspanM.toFixed(2)} m (
-                    {(calibration.wingspanM * 3.28084).toFixed(2)} ft)
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={calibration.wingspanM}
+                      onChange={(e) =>
+                        handleRulerValueChange(
+                          "WINGSPAN",
+                          parseFloat(e.target.value)
+                        )
+                      }
+                      className="w-20 px-2 py-0.5 rounded bg-slate-950 border border-slate-700 font-mono text-xs text-amber-300 text-right"
+                    />
+                    <span className="font-mono text-[11px] text-slate-400">
+                      m ({(calibration.wingspanM * 3.28084).toFixed(2)} ft)
+                    </span>
+                  </div>
                 </div>
                 <input
                   type="range"
@@ -467,22 +833,38 @@ export default function BlueprintCalibratorView() {
                   step={0.01}
                   value={calibration.wingspanM}
                   onChange={(e) =>
-                    updateCalibration({ wingspanM: parseFloat(e.target.value) })
+                    handleRulerValueChange(
+                      "WINGSPAN",
+                      parseFloat(e.target.value)
+                    )
                   }
-                  className="w-full accent-sky-400"
+                  className="w-full accent-amber-400"
                 />
               </div>
 
               {/* Fuselage Length */}
               <div className="space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-300 font-medium">
-                    Overall Length (Spinner to Rudder TE)
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-sky-300 font-medium">
+                    Overall Length Ruler (Spinner to Rudder)
                   </span>
-                  <span className="font-mono text-sky-400">
-                    {calibration.lengthM.toFixed(3)} m (
-                    {(calibration.lengthM * 3.28084).toFixed(2)} ft)
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      step="0.005"
+                      value={calibration.lengthM}
+                      onChange={(e) =>
+                        handleRulerValueChange(
+                          "LENGTH",
+                          parseFloat(e.target.value)
+                        )
+                      }
+                      className="w-20 px-2 py-0.5 rounded bg-slate-950 border border-slate-700 font-mono text-xs text-sky-300 text-right"
+                    />
+                    <span className="font-mono text-[11px] text-slate-400">
+                      m ({(calibration.lengthM * 3.28084).toFixed(2)} ft)
+                    </span>
+                  </div>
                 </div>
                 <input
                   type="range"
@@ -491,7 +873,7 @@ export default function BlueprintCalibratorView() {
                   step={0.005}
                   value={calibration.lengthM}
                   onChange={(e) =>
-                    updateCalibration({ lengthM: parseFloat(e.target.value) })
+                    handleRulerValueChange("LENGTH", parseFloat(e.target.value))
                   }
                   className="w-full accent-sky-400"
                 />
@@ -499,14 +881,27 @@ export default function BlueprintCalibratorView() {
 
               {/* Overall Height */}
               <div className="space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-300 font-medium">
-                    Overall Tail Height
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-emerald-300 font-medium">
+                    Tail Height Ruler (Ground to Fin Tip)
                   </span>
-                  <span className="font-mono text-sky-400">
-                    {calibration.heightM.toFixed(2)} m (
-                    {(calibration.heightM * 3.28084).toFixed(2)} ft)
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={calibration.heightM}
+                      onChange={(e) =>
+                        handleRulerValueChange(
+                          "HEIGHT",
+                          parseFloat(e.target.value)
+                        )
+                      }
+                      className="w-20 px-2 py-0.5 rounded bg-slate-950 border border-slate-700 font-mono text-xs text-emerald-300 text-right"
+                    />
+                    <span className="font-mono text-[11px] text-slate-400">
+                      m ({(calibration.heightM * 3.28084).toFixed(2)} ft)
+                    </span>
+                  </div>
                 </div>
                 <input
                   type="range"
@@ -515,9 +910,9 @@ export default function BlueprintCalibratorView() {
                   step={0.01}
                   value={calibration.heightM}
                   onChange={(e) =>
-                    updateCalibration({ heightM: parseFloat(e.target.value) })
+                    handleRulerValueChange("HEIGHT", parseFloat(e.target.value))
                   }
-                  className="w-full accent-sky-400"
+                  className="w-full accent-emerald-400"
                 />
               </div>
 
