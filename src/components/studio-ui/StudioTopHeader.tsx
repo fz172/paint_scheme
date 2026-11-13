@@ -8,10 +8,9 @@ import {
   Paintbrush,
   PanelBottom,
   Plane,
-  Sun,
 } from "lucide-react";
 import { useLiveryStore } from "@/store/useLiveryStore";
-import { CameraViewPreset, EnvironmentPresetId } from "@/types/livery";
+import { CameraViewPreset } from "@/types/livery";
 
 const CAMERA_BUTTONS: { id: CameraViewPreset; label: string }[] = [
   { id: "HERO_3_4", label: "3/4 Hero" },
@@ -38,9 +37,6 @@ export default function StudioTopHeader({
 
   const cameraPreset = useLiveryStore((s) => s.cameraPreset);
   const setCameraPreset = useLiveryStore((s) => s.setCameraPreset);
-
-  const environmentPreset = useLiveryStore((s) => s.environmentPreset);
-  const setEnvironmentPreset = useLiveryStore((s) => s.setEnvironmentPreset);
 
   return (
     <header className="w-full h-14 px-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-3 select-none shrink-0">
@@ -92,7 +88,7 @@ export default function StudioTopHeader({
         </div>
       </div>
 
-      {/* Center: Camera Views & Lighting (when in 3D Livery Studio) */}
+      {/* Center: Camera Views (when in 3D Livery Studio) */}
       {activeWorkspaceTab === "LIVERY_STUDIO" && (
         <div className="hidden lg:flex items-center gap-2">
           <div className="flex items-center gap-1 bg-slate-900 px-2 py-1 rounded-lg border border-slate-800">
@@ -111,34 +107,6 @@ export default function StudioTopHeader({
                 {cam.label}
               </button>
             ))}
-          </div>
-
-          {/* Environment Lighting Dropdown */}
-          <div className="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-800">
-            <Sun className="w-3.5 h-3.5 text-amber-400" />
-            <select
-              value={environmentPreset}
-              onChange={(e) =>
-                setEnvironmentPreset(e.target.value as EnvironmentPresetId)
-              }
-              className="bg-transparent text-xs text-slate-200 focus:outline-none cursor-pointer"
-            >
-              <option value="HANGAR_STUDIO" className="bg-slate-900">
-                Hangar Studio Lighting
-              </option>
-              <option value="SUNNY_TARMAC" className="bg-slate-900">
-                Sunny Ramp / Tarmac
-              </option>
-              <option value="GOLDEN_HOUR" className="bg-slate-900">
-                Golden Hour Sunset
-              </option>
-              <option value="ALPINE_FLIGHT" className="bg-slate-900">
-                High-Altitude Daylight
-              </option>
-              <option value="DARK_SHOWROOM" className="bg-slate-900">
-                Dark Carbon Showroom
-              </option>
-            </select>
           </div>
         </div>
       )}

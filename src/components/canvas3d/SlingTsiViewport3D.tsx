@@ -116,10 +116,6 @@ export default function SlingTsiViewport3D({
   const fillLightRef = useRef<THREE.DirectionalLight | null>(null);
   const rimLightRef = useRef<THREE.DirectionalLight | null>(null);
 
-  const spinPropRef = useRef<boolean>(false);
-  const [spinPropeller, setSpinPropeller] = useState(false);
-  const [showDimensions, setShowDimensions] = useState(true);
-  const [showRefPhotoPip, setShowRefPhotoPip] = useState(true);
   const [hoverStation, setHoverStation] = useState<{
     partName: string;
     xM: number;
@@ -152,7 +148,7 @@ export default function SlingTsiViewport3D({
     const height = container.clientHeight || 600;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#0F172A");
+    scene.background = new THREE.Color(ENV_CONFIG.DARK_SHOWROOM.bg);
     sceneRef.current = scene;
 
     // Camera positioned at the exact front-left 3/4 angle of the N532SL reference photo!
@@ -243,14 +239,9 @@ export default function SlingTsiViewport3D({
     controlsRef.current = controls;
 
     let animFrameId = 0;
-    const clock = new THREE.Clock();
 
     const animate = () => {
       animFrameId = requestAnimationFrame(animate);
-      const delta = clock.getDelta();
-      if (spinPropRef.current && propMeshRef.current) {
-        propMeshRef.current.rotation.x += delta * 18;
-      }
       controls.update();
       renderer.render(scene, camera);
     };
@@ -493,7 +484,7 @@ export default function SlingTsiViewport3D({
   }, [meshParts, textures, zones, stripes, calibration]);
 
   useEffect(() => {
-    const env = ENV_CONFIG[environmentPreset] || ENV_CONFIG.SUNNY_TARMAC;
+    const env = ENV_CONFIG[environmentPreset] || ENV_CONFIG.DARK_SHOWROOM;
     if (sceneRef.current) {
       sceneRef.current.background = new THREE.Color(env.bg);
     }
@@ -592,16 +583,6 @@ export default function SlingTsiViewport3D({
     }
   };
 
-  const togglePropSpin = () => {
-    spinPropRef.current = !spinPropRef.current;
-    setSpinPropeller(spinPropRef.current);
-  };
-
-  const activeRefPhoto =
-    calibration.referencePhotoUrls[
-      calibration.referencePhotoUrls.length - 1
-    ] || null;
-
   return (
     <div
       className="relative w-full h-full select-none overflow-hidden bg-slate-950"
@@ -639,84 +620,21 @@ export default function SlingTsiViewport3D({
       </div>
 
       {/* Top-Right POH Dimension Callout Pills */}
-      {showDimensions && (
-        <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5 pointer-events-none">
-          <div className="px-2.5 py-1 rounded bg-slate-900/85 border border-amber-500/40 text-[11px] font-mono text-amber-300 shadow">
-            Span: {(calibration.wingspanM * 1000).toFixed(0)} mm (
-            {calibration.wingspanM.toFixed(2)} m)
-          </div>
-          <div className="px-2.5 py-1 rounded bg-slate-900/85 border border-sky-500/40 text-[11px] font-mono text-sky-300 shadow">
-            Length: {(calibration.lengthM * 1000).toFixed(0)} mm | Wheelbase:{" "}
-            {((calibration.noseAxleStationM || 0.9) * 1000).toFixed(0)}+
-            {((calibration.wheelbaseM || 1.75) * 1000).toFixed(0)} mm
-          </div>
-          <div className="px-2.5 py-1 rounded bg-slate-900/85 border border-emerald-500/40 text-[11px] font-mono text-emerald-300 shadow">
-            Height: {(calibration.heightM * 1000).toFixed(0)} mm | Track:{" "}
-            {((calibration.wheelTrackM || 2.05) * 1000).toFixed(0)} mm | Reg:{" "}
-            {registration.text}
-          </div>
+      <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5 pointer-events-none">
+        <div className="px-2.5 py-1 rounded bg-slate-900/85 border border-amber-500/40 text-[11px] font-mono text-amber-300 shadow">
+          Span: {(calibration.wingspanM * 1000).toFixed(0)} mm (
+          {calibration.wingspanM.toFixed(2)} m)
         </div>
-      )}
-
-      {/* Bottom-Right Reference Photo Comparison PiP */}
-      {showRefPhotoPip && activeRefPhoto && (
-        <div className="absolute bottom-3 right-3 w-56 rounded-xl overflow-hidden bg-slate-900/95 border border-slate-700 shadow-2xl">
-          <div className="flex items-center justify-between px-2.5 py-1 bg-slate-950/90 border-b border-slate-800 text-[10px] text-slate-300">
-            <span className="font-semibold">Reference Photo (N532SL)</span>
-            <button
-              type="button"
-              onClick={() => setShowRefPhotoPip(false)}
-              className="text-slate-400 hover:text-white"
-            >
-              ✕
-            </button>
-          </div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={activeRefPhoto}
-            alt="Reference Aircraft"
-            className="w-full h-32 object-cover"
-          />
+        <div className="px-2.5 py-1 rounded bg-slate-900/85 border border-sky-500/40 text-[11px] font-mono text-sky-300 shadow">
+          Length: {(calibration.lengthM * 1000).toFixed(0)} mm | Wheelbase:{" "}
+          {((calibration.noseAxleStationM || 0.9) * 1000).toFixed(0)}+
+          {((calibration.wheelbaseM || 1.75) * 1000).toFixed(0)} mm
         </div>
-      )}
-
-      {/* Bottom-Left Controls */}
-      <div className="absolute bottom-3 left-3 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setShowDimensions((v) => !v)}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
-            showDimensions
-              ? "bg-sky-500/20 border-sky-500/60 text-sky-300"
-              : "bg-slate-900/80 border-slate-700 text-slate-400 hover:text-slate-200"
-          }`}
-        >
-          {showDimensions ? "✓ POH Dimensions" : "Dimensions Off"}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setShowRefPhotoPip((v) => !v)}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
-            showRefPhotoPip
-              ? "bg-emerald-500/20 border-emerald-500/60 text-emerald-300"
-              : "bg-slate-900/80 border-slate-700 text-slate-400 hover:text-slate-200"
-          }`}
-        >
-          {showRefPhotoPip ? "✓ Ref Photo PiP" : "Show Ref Photo"}
-        </button>
-
-        <button
-          type="button"
-          onClick={togglePropSpin}
-          className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
-            spinPropeller
-              ? "bg-amber-500/20 border-amber-500/60 text-amber-300"
-              : "bg-slate-900/80 border-slate-700 text-slate-400 hover:text-slate-200"
-          }`}
-        >
-          {spinPropeller ? "⟳ Prop Spinning" : "Prop Static"}
-        </button>
+        <div className="px-2.5 py-1 rounded bg-slate-900/85 border border-emerald-500/40 text-[11px] font-mono text-emerald-300 shadow">
+          Height: {(calibration.heightM * 1000).toFixed(0)} mm | Track:{" "}
+          {((calibration.wheelTrackM || 2.05) * 1000).toFixed(0)} mm | Reg:{" "}
+          {registration.text}
+        </div>
       </div>
     </div>
   );

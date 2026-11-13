@@ -2,18 +2,15 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Camera,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Compass,
   FileText,
   FileUp,
-  Palette,
   RotateCcw,
   Ruler,
   Sparkles,
-  Upload,
   Wand2,
 } from "lucide-react";
 import { useLiveryStore } from "@/store/useLiveryStore";
@@ -23,10 +20,6 @@ import {
   ParsedBlueprintResult,
   parseDrawingFile,
 } from "@/engine/blueprintParser";
-import {
-  ExtractedPhotoLiveryResult,
-  extractLiveryFromReferencePhoto,
-} from "@/engine/photoLiveryExtractor";
 import { Point2D, RulerCalibrationLine } from "@/types/livery";
 
 type DragRulerHandle = {
@@ -69,14 +62,11 @@ export default function BlueprintCalibratorView() {
     useState<ParsedBlueprintResult | null>(null);
   const [isParsingFile, setIsParsingFile] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
-  const [extractedPhotoInfo, setExtractedPhotoInfo] =
-    useState<ExtractedPhotoLiveryResult | null>(null);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
 
   const [dragHandle, setDragHandle] = useState<DragRulerHandle>(null);
 
   const blueprintInputRef = useRef<HTMLInputElement>(null);
-  const photoInputRef = useRef<HTMLInputElement>(null);
   const overlaySvgRef = useRef<SVGSVGElement>(null);
 
   const handleProcessDrawingFile = async (
@@ -184,33 +174,6 @@ export default function BlueprintCalibratorView() {
     await handleProcessDrawingFile(uploadedFile, clamped, false);
   };
 
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
-    const primaryFile = files[0];
-    try {
-      const extracted = await extractLiveryFromReferencePhoto(primaryFile);
-      setExtractedPhotoInfo(extracted);
-      updateCalibration({
-        referencePhotoUrls: [
-          ...calibration.referencePhotoUrls,
-          extracted.photoUrl,
-        ],
-      });
-      // Immediately apply the photo-extracted livery scheme to the 3D Sling TSi!
-      applySchemePreset(extracted.generatedPreset);
-      setStatusBanner(
-        `✓ Extracted paint scheme from photo "${primaryFile.name}" (${extracted.matchedBaseSwatch.name} + ${extracted.matchedAccentSwatch.name} + ${extracted.matchedTrimSwatch.name}) and applied to 3D Sling TSi!`
-      );
-    } catch (err) {
-      setParseError(
-        err instanceof Error
-          ? err.message
-          : "Failed to extract colors from reference photo."
-      );
-    }
-  };
-
   const getNormalizedSvgCoords = (
     e: React.PointerEvent<SVGSVGElement>
   ): Point2D => {
@@ -295,13 +258,13 @@ export default function BlueprintCalibratorView() {
           <div>
             <div className="flex items-center gap-2 text-sky-400 text-xs font-semibold uppercase tracking-wider mb-1">
               <Compass className="w-4 h-4" />
-              Pipeline A: Sling 4 TSi POH 3-View PDF Parser & Reference Photo Livery Extractor
+              Pipeline A: Sling 4 TSi POH 3-View PDF Parser & Airframe Calibrator
             </div>
             <h2 className="text-xl font-bold text-white">
-              Sling 4 TSi Airframe Calibration & Photo-to-Livery Extraction
+              Sling 4 TSi Airframe Calibration
             </h2>
             <p className="text-sm text-slate-400 mt-0.5">
-              Automatically extracts millimetre dimensions from your <strong>Sling 4 TSi POH 3-View Drawing PDF</strong> and extracts custom paint schemes from uploaded <strong>Reference Photos</strong>.
+              Automatically extracts millimetre dimensions from your <strong>Sling 4 TSi POH 3-View Drawing PDF</strong> to drive the 3D geometry.
             </p>
           </div>
 
@@ -639,112 +602,8 @@ export default function BlueprintCalibratorView() {
             </div>
           </div>
 
-          {/* Right 5 Cols: Reference Photo Livery Extractor + Exact POH Millimetre Sliders */}
+          {/* Right 5 Cols: Exact POH Millimetre Sliders */}
           <div className="lg:col-span-5 space-y-5">
-            {/* Reference Photo Livery Extractor Card */}
-            <div className="rounded-xl bg-slate-900 border border-slate-800 p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Camera className="w-4 h-4 text-amber-400" />
-                  <div>
-                    <h3 className="text-sm font-bold text-white">
-                      Reference Photo → Auto Livery Extractor
-                    </h3>
-                    <p className="text-[11px] text-slate-400">
-                      Uploading a photo extracts its paint colors & applies the livery to the 3D model
-                    </p>
-                  </div>
-                </div>
-                <div>
-                  <input
-                    ref={photoInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handlePhotoUpload}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => photoInputRef.current?.click()}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-amber-500 hover:bg-amber-400 text-xs text-slate-950 font-bold transition"
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                    Upload Photo & Extract Livery
-                  </button>
-                </div>
-              </div>
-
-              {/* Active Reference Photos Grid */}
-              <div className="grid grid-cols-2 gap-3">
-                {calibration.referencePhotoUrls.map((url, idx) => (
-                  <div
-                    key={idx}
-                    className="relative rounded-lg overflow-hidden border border-slate-700 bg-slate-950 group"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={url}
-                      alt={`Reference Aircraft ${idx + 1}`}
-                      className="w-full h-36 object-cover"
-                    />
-                    <div className="p-2 bg-slate-950/90 border-t border-slate-800 flex items-center justify-between text-[11px]">
-                      <span className="text-slate-300 font-medium truncate">
-                        {idx === 0 ? "N532SL Reference" : `Uploaded #${idx}`}
-                      </span>
-                      <span className="text-emerald-400 font-mono text-[10px]">
-                        ✓ Applied
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {extractedPhotoInfo && (
-                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-2">
-                  <div className="text-[11px] font-semibold text-amber-300 flex items-center gap-1.5">
-                    <Palette className="w-3.5 h-3.5" />
-                    Extracted Swatches from &ldquo;{extractedPhotoInfo.fileName}&rdquo;:
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 text-[10px]">
-                    <div className="flex items-center gap-1.5 p-1.5 rounded bg-slate-900 border border-slate-800">
-                      <span
-                        className="w-4 h-4 rounded border border-slate-600 shrink-0"
-                        style={{
-                          backgroundColor: extractedPhotoInfo.dominantBaseHex,
-                        }}
-                      />
-                      <span className="truncate">
-                        {extractedPhotoInfo.matchedBaseSwatch.name}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5 p-1.5 rounded bg-slate-900 border border-slate-800">
-                      <span
-                        className="w-4 h-4 rounded border border-slate-600 shrink-0"
-                        style={{
-                          backgroundColor:
-                            extractedPhotoInfo.dominantPrimaryAccentHex,
-                        }}
-                      />
-                      <span className="truncate">
-                        {extractedPhotoInfo.matchedAccentSwatch.name}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5 p-1.5 rounded bg-slate-900 border border-slate-800">
-                      <span
-                        className="w-4 h-4 rounded border border-slate-600 shrink-0"
-                        style={{
-                          backgroundColor: extractedPhotoInfo.dominantTrimHex,
-                        }}
-                      />
-                      <span className="truncate">
-                        {extractedPhotoInfo.matchedTrimSwatch.name}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
             {/* POH Engineering Dimensions Card */}
             <div className="rounded-xl bg-slate-900 border border-slate-800 p-5 space-y-4">
               <div className="flex items-center justify-between border-b border-slate-800 pb-3">

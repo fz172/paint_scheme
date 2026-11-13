@@ -101,7 +101,7 @@ const DEFAULT_CALIBRATION: AirframeCalibration = {
   panelLineIntensity: 0.55,
   customBlueprintSideUrl: null,
   customBlueprintTopUrl: null,
-  referencePhotoUrls: ["/references/sling-tsi-n532sl-ref.jpg"],
+  referencePhotoUrls: [],
   customGlbUrl: null,
   rulers: [
     {
@@ -135,7 +135,7 @@ export const useLiveryStore = create<LiveryStoreState>((set) => ({
   projectName: "Sling 4 TSi — N532SL Reference Livery",
   activeWorkspaceTab: "LIVERY_STUDIO",
   split2DEditorOpen: true,
-  environmentPreset: "SUNNY_TARMAC",
+  environmentPreset: "DARK_SHOWROOM",
   cameraPreset: "FREE_ORBIT",
   selectedStripeId: DEFAULT_PRESET.stripes[0]?.id ?? null,
   activeSidePanel: "PRESETS",
