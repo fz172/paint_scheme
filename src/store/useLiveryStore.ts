@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 import {
   AirframeCalibration,
   AviationFinishType,
@@ -131,7 +132,9 @@ const DEFAULT_CALIBRATION: AirframeCalibration = {
   ],
 };
 
-export const useLiveryStore = create<LiveryStoreState>((set) => ({
+export const useLiveryStore = create<LiveryStoreState>()(
+  persist(
+    (set) => ({
   projectName: "Sling 4 TSi — N532SL Reference Livery",
   activeWorkspaceTab: "LIVERY_STUDIO",
   split2DEditorOpen: true,
@@ -313,4 +316,44 @@ export const useLiveryStore = create<LiveryStoreState>((set) => ({
     set((state) => ({
       aiConcepts: [...concepts, ...state.aiConcepts],
     })),
-}));
+    }),
+    {
+      name: "aerocanvas-sling-tsi-studio-v1",
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        projectName: state.projectName,
+        activeWorkspaceTab: state.activeWorkspaceTab,
+        split2DEditorOpen: state.split2DEditorOpen,
+        cameraPreset: state.cameraPreset,
+        selectedStripeId: state.selectedStripeId,
+        activeSidePanel: state.activeSidePanel,
+        calibration: state.calibration,
+        zones: state.zones,
+        stripes: state.stripes,
+        registration: state.registration,
+        decals: state.decals,
+        aiConcepts: state.aiConcepts,
+      }),
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState as Partial<LiveryStoreState>) || {};
+        return {
+          ...currentState,
+          ...persisted,
+          calibration: {
+            ...currentState.calibration,
+            ...(persisted.calibration || {}),
+          },
+          zones: {
+            ...currentState.zones,
+            ...(persisted.zones || {}),
+          },
+          registration: {
+            ...currentState.registration,
+            ...(persisted.registration || {}),
+          },
+          textureRevision: currentState.textureRevision + 1,
+        };
+      },
+    }
+  )
+);
