@@ -66,64 +66,100 @@ export function renderOrthographicSideViewCanvas(
     ctx.scale(-1, 1);
   }
 
-  const padX = width * 0.1;
-  const drawW = width * 0.8;
-  const padY = height * 0.14;
-  const drawH = height * 0.68;
+  const L = opts.calibration.lengthM || 7.2;
+  const H_m = opts.calibration.heightM || 2.35;
+  const thrustY = opts.calibration.propThrustlineHeightM || 1.18;
+  const pxPerM = Math.min((width * 0.82) / L, (height * 0.68) / H_m);
+  const drawW = L * pxPerM;
+  const drawH = H_m * pxPerM;
+  const padX = (width - drawW) * 0.5;
+  const padY = (height - drawH) * 0.5;
 
   const mapProfile = (uNorm: number, vNorm: number) => ({
     x: padX + uNorm * drawW,
     y: padY + (1 - vNorm) * drawH,
   });
 
-  // Build Sling TSi fuselage + vertical fin silhouette path in normalized [0..1, 0..1] space
+  const toU = (xM: number) => Math.max(0, Math.min(1, xM / L));
+  const toV = (yGroundM: number) => Math.max(0, Math.min(1, yGroundM / H_m));
+
+  // Build Sling 4 TSi POH Section 1.3 fuselage + vertical fin silhouette path
   const traceFuselageAndFinSilhouette = () => {
     ctx.beginPath();
-    const steps = 80;
-    // Upper contour from nose (t=0) to dorsal root (t=0.75) -> fin tip -> rudder TE -> tailcone bottom -> nose
+    const steps = 64;
+    const spTip = mapProfile(0.0, toV(thrustY));
+    const spTop1 = mapProfile(toU(0.14), toV(thrustY + 0.14));
+    const spTop2 = mapProfile(toU(0.42), toV(thrustY + 0.22));
+    ctx.moveTo(spTip.x, spTip.y);
+    ctx.lineTo(spTop1.x, spTop1.y);
+    ctx.lineTo(spTop2.x, spTop2.y);
+
+    // Upper contour from s=0.42m to dorsal fin root (t=0.76)
     for (let i = 0; i <= steps; i++) {
       const t = (i / steps) * 0.76;
+      const sM = 0.42 + t * 6.46;
       const st = evaluateSlingFuselageStation(t);
-      const u = 0.05 + t * 0.88;
-      const v = 0.44 + st.yTop * 0.52;
-      const pt = mapProfile(u, v);
-      if (i === 0) ctx.moveTo(pt.x, pt.y);
-      else ctx.lineTo(pt.x, pt.y);
-    }
-    // Swept vertical stabilizer leading edge up to fin tip
-    const finTipLE = mapProfile(0.88, 0.96);
-    const finTipTE = mapProfile(0.96, 0.96);
-    const rudderBottomTE = mapProfile(0.95, 0.44);
-    ctx.lineTo(finTipLE.x, finTipLE.y);
-    ctx.lineTo(finTipTE.x, finTipTE.y);
-    ctx.lineTo(rudderBottomTE.x, rudderBottomTE.y);
-
-    // Bottom contour back from tailcone (t=1.0) to nose (t=0.0)
-    for (let i = steps; i >= 0; i--) {
-      const t = i / steps;
-      const st = evaluateSlingFuselageStation(t);
-      const u = 0.05 + t * 0.88;
-      const v = 0.44 + st.yBottom * 0.52;
-      const pt = mapProfile(u, v);
+      const pt = mapProfile(toU(sM), toV(thrustY + st.yTop));
       ctx.lineTo(pt.x, pt.y);
     }
+
+    // Dorsal fillet -> swept vertical stabilizer leading edge -> fin tip -> rudder TE -> tailcone
+    for (const [xM, yM] of [
+      [5.65, thrustY + 0.16],
+      [5.85, thrustY + 0.24],
+      [6.38, H_m * 0.99],
+      [7.16, H_m * 0.99],
+      [6.92, thrustY + 0.04],
+      [7.05, thrustY + 0.015],
+    ]) {
+      const pt = mapProfile(toU(xM), toV(yM));
+      ctx.lineTo(pt.x, pt.y);
+    }
+
+    // Bottom contour back from tailcone (t=1.0) to spinner
+    for (let i = steps; i >= 0; i--) {
+      const t = i / steps;
+      const sM = 0.42 + t * 6.46;
+      const st = evaluateSlingFuselageStation(t);
+      const pt = mapProfile(toU(sM), toV(thrustY + st.yBottom));
+      ctx.lineTo(pt.x, pt.y);
+    }
+    const spBot2 = mapProfile(toU(0.42), toV(thrustY - 0.2));
+    const spBot1 = mapProfile(toU(0.14), toV(thrustY - 0.13));
+    ctx.lineTo(spBot2.x, spBot2.y);
+    ctx.lineTo(spBot1.x, spBot1.y);
     ctx.closePath();
   };
 
-  // 1. Landing gear struts & tires (drawn behind fuselage)
+  // 1. Ground reference line & Landing gear struts + wheel pants (POH 900mm & 2650mm)
+  const gLeft = mapProfile(0.02, 0);
+  const gRight = mapProfile(0.98, 0);
+  ctx.strokeStyle = "#CBD5E1";
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([8, 6]);
+  ctx.beginPath();
+  ctx.moveTo(gLeft.x, gLeft.y);
+  ctx.lineTo(gRight.x, gRight.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const noseGearU = toU(opts.calibration.noseAxleStationM || 0.9);
+  const mainGearU = toU(
+    (opts.calibration.noseAxleStationM || 0.9) +
+      (opts.calibration.wheelbaseM || 1.75)
+  );
+
   ctx.strokeStyle = "#475569";
-  ctx.lineWidth = 6;
-  // Nose strut
-  const noseTop = mapProfile(0.14, 0.28);
-  const noseWheel = mapProfile(0.12, 0.11);
+  ctx.lineWidth = 5;
+  const noseTop = mapProfile(noseGearU + 0.017, 0.28);
+  const noseWheel = mapProfile(noseGearU, 0.06);
   ctx.beginPath();
   ctx.moveTo(noseTop.x, noseTop.y);
   ctx.lineTo(noseWheel.x, noseWheel.y);
   ctx.stroke();
 
-  // Main gear strut
-  const mainTop = mapProfile(0.39, 0.26);
-  const mainWheel = mapProfile(0.41, 0.11);
+  const mainTop = mapProfile(mainGearU, 0.28);
+  const mainWheel = mapProfile(mainGearU, 0.06);
   ctx.beginPath();
   ctx.moveTo(mainTop.x, mainTop.y);
   ctx.lineTo(mainWheel.x, mainWheel.y);
@@ -132,39 +168,43 @@ export function renderOrthographicSideViewCanvas(
   // Tires
   ctx.fillStyle = "#1E293B";
   ctx.beginPath();
-  ctx.arc(noseWheel.x, noseWheel.y, drawH * 0.055, 0, Math.PI * 2);
-  ctx.arc(mainWheel.x, mainWheel.y, drawH * 0.065, 0, Math.PI * 2);
+  ctx.arc(noseWheel.x, noseWheel.y, drawH * 0.045, 0, Math.PI * 2);
+  ctx.arc(mainWheel.x, mainWheel.y, drawH * 0.052, 0, Math.PI * 2);
   ctx.fill();
 
   // Wheel Pants (Spats)
   if (opts.calibration.wheelPantsInstalled) {
-    for (const [cxU, cyV, rx, ry] of [
-      [0.12, 0.12, 0.042, 0.055],
-      [0.41, 0.12, 0.05, 0.065],
-    ]) {
-      const c = mapProfile(cxU, cyV);
+    const drawWheelPant = (ptsNorm: [number, number][]) => {
       ctx.save();
       ctx.beginPath();
-      ctx.ellipse(c.x, c.y, drawW * rx, drawH * ry, 0, 0, Math.PI * 2);
+      ptsNorm.forEach(([u, v], idx) => {
+        const p = mapProfile(u, v);
+        if (idx === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      });
+      ctx.closePath();
       ctx.fillStyle = opts.zones.wheelPants.colorHex;
       ctx.fill();
-      ctx.clip();
-
-      // Wheel pant stripe
-      const spatStripe = opts.stripes.find(
-        (s) => s.visible && s.targetZone === "WHEEL_PANTS"
-      );
-      if (spatStripe) {
-        ctx.fillStyle = spatStripe.colorHex;
-        ctx.fillRect(c.x - drawW * rx, c.y - 4, drawW * rx * 2, 7);
-      }
-      ctx.restore();
-      ctx.strokeStyle = "#334155";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.ellipse(c.x, c.y, drawW * rx, drawH * ry, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = "#1E293B";
+      ctx.lineWidth = 2;
       ctx.stroke();
-    }
+      ctx.restore();
+    };
+
+    drawWheelPant([
+      [noseGearU - 0.04, 0.06],
+      [noseGearU - 0.01, 0.145],
+      [noseGearU + 0.04, 0.095],
+      [noseGearU + 0.02, 0.015],
+      [noseGearU - 0.02, 0.015],
+    ]);
+    drawWheelPant([
+      [mainGearU - 0.046, 0.075],
+      [mainGearU - 0.013, 0.14],
+      [mainGearU + 0.06, 0.075],
+      [mainGearU + 0.037, 0.015],
+      [mainGearU - 0.023, 0.015],
+    ]);
   }
 
   // 2. Clip to Fuselage + Fin Silhouette and render Livery Layers
@@ -267,37 +307,42 @@ export function renderOrthographicSideViewCanvas(
     }
   }
 
-  // Bubble Canopy Tinted Glass Window (Protected Mask)
-  ctx.fillStyle = "rgba(30, 41, 59, 0.72)";
-  ctx.beginPath();
-  for (let i = 0; i <= 36; i++) {
-    const t = 0.225 + (i / 36) * 0.31;
-    const st = evaluateSlingFuselageStation(t);
-    const pt = mapProfile(0.05 + t * 0.88, 0.44 + st.yTop * 0.52 - 0.01);
-    if (i === 0) ctx.moveTo(pt.x, pt.y);
-    else ctx.lineTo(pt.x, pt.y);
-  }
-  const sillRear = mapProfile(0.05 + 0.535 * 0.88, 0.5);
-  const sillMid = mapProfile(0.05 + 0.38 * 0.88, 0.52);
-  const sillFront = mapProfile(0.05 + 0.225 * 0.88, 0.54);
-  ctx.lineTo(sillRear.x, sillRear.y);
-  ctx.lineTo(sillMid.x, sillMid.y);
-  ctx.lineTo(sillFront.x, sillFront.y);
-  ctx.closePath();
-  ctx.fill();
-
-  // Painted Canopy Roll-Bar Frame Bow
-  ctx.strokeStyle = opts.zones.fuselageBase.colorHex;
-  ctx.lineWidth = 7;
-  const bowTop = mapProfile(0.05 + 0.375 * 0.88, 0.81);
-  const bowBot = mapProfile(0.05 + 0.375 * 0.88, 0.51);
-  ctx.beginPath();
-  ctx.moveTo(bowTop.x, bowTop.y);
-  ctx.lineTo(bowBot.x, bowBot.y);
-  ctx.stroke();
+  // 3 Distinct Sling 4 TSi Framed Windows (POH Side Profile)
+  const drawWindowPoly = (ptsNorm: [number, number][]) => {
+    ctx.fillStyle = "rgba(30, 41, 59, 0.78)";
+    ctx.strokeStyle = "#1E293B";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ptsNorm.forEach(([u, v], idx) => {
+      const p = mapProfile(u, v);
+      if (idx === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    });
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  };
+  drawWindowPoly([
+    [0.195, 0.625],
+    [0.295, 0.742],
+    [0.295, 0.6],
+    [0.195, 0.6],
+  ]);
+  drawWindowPoly([
+    [0.305, 0.742],
+    [0.425, 0.725],
+    [0.425, 0.59],
+    [0.305, 0.59],
+  ]);
+  drawWindowPoly([
+    [0.44, 0.685],
+    [0.515, 0.635],
+    [0.515, 0.575],
+    [0.44, 0.575],
+  ]);
 
   // Panel lines
-  ctx.strokeStyle = "rgba(15, 23, 42, 0.22)";
+  ctx.strokeStyle = "rgba(15, 23, 42, 0.18)";
   ctx.lineWidth = 1.2;
   for (const uSt of [0.24, 0.52, 0.64, 0.74, 0.84]) {
     const p1 = mapProfile(uSt, 0.15);
@@ -316,55 +361,50 @@ export function renderOrthographicSideViewCanvas(
   ctx.lineWidth = 2.2;
   ctx.stroke();
 
-  // Low-wing root airfoil cross-section & upturned wingtip visible in side view
-  const wingLE = mapProfile(0.31, 0.31);
-  const wingTE = mapProfile(0.49, 0.29);
+  // Low-wing side profile (LE 1912mm, TE 3432mm)
+  const wingLE_u = toU(opts.calibration.wingLEStationM || 1.912);
+  const wingTE_u = toU(
+    (opts.calibration.wingLEStationM || 1.912) +
+      (opts.calibration.wingChordRootM || 1.52)
+  );
   ctx.fillStyle = opts.zones.wingBase.colorHex;
   ctx.strokeStyle = "#1E293B";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(wingLE.x, wingLE.y);
-  ctx.quadraticCurveTo(
-    (wingLE.x + wingTE.x) * 0.45,
-    wingLE.y - 22,
-    wingTE.x,
-    wingTE.y
-  );
-  ctx.quadraticCurveTo(
-    (wingLE.x + wingTE.x) * 0.5,
-    wingLE.y + 10,
-    wingLE.x,
-    wingLE.y
-  );
-  ctx.fill();
-  ctx.stroke();
-
-  // Wingtip winglets accent visible above wing chord
-  ctx.fillStyle = opts.zones.wingtips.colorHex;
-  ctx.beginPath();
-  ctx.moveTo(wingLE.x + 18, wingLE.y - 8);
-  ctx.lineTo(wingTE.x - 6, wingTE.y - 24);
-  ctx.lineTo(wingTE.x, wingTE.y);
+  [
+    [wingLE_u, 0.34],
+    [wingLE_u + 0.064, 0.385],
+    [wingTE_u, 0.355],
+    [wingTE_u, 0.32],
+    [wingLE_u + 0.044, 0.31],
+  ].forEach(([u, v], idx) => {
+    const p = mapProfile(u, v);
+    if (idx === 0) ctx.moveTo(p.x, p.y);
+    else ctx.lineTo(p.x, p.y);
+  });
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
 
-  // Spinner & 3-Blade Propeller
-  const spTip = mapProfile(0.01, 0.42);
-  const spBaseTop = mapProfile(0.05, 0.47);
-  const spBaseBot = mapProfile(0.05, 0.37);
-  ctx.fillStyle = opts.zones.spinner.colorHex;
+  // Horizontal Stabilizer in side profile
   ctx.beginPath();
-  ctx.moveTo(spTip.x, spTip.y);
-  ctx.quadraticCurveTo(spBaseTop.x - 14, spBaseTop.y, spBaseTop.x, spBaseTop.y);
-  ctx.lineTo(spBaseBot.x, spBaseBot.y);
-  ctx.quadraticCurveTo(spBaseBot.x - 14, spBaseBot.y, spTip.x, spTip.y);
+  [
+    [0.86, 0.505],
+    [0.98, 0.525],
+    [0.98, 0.5],
+    [0.86, 0.485],
+  ].forEach(([u, v], idx) => {
+    const p = mapProfile(u, v);
+    if (idx === 0) ctx.moveTo(p.x, p.y);
+    else ctx.lineTo(p.x, p.y);
+  });
+  ctx.closePath();
   ctx.fill();
   ctx.stroke();
 
-  // Propeller disk blade vertical bar
-  const propTop = mapProfile(0.045, 0.72);
-  const propBot = mapProfile(0.045, 0.12);
+  // Propeller disk blade vertical bar at u=0.032
+  const propTop = mapProfile(0.032, 0.84);
+  const propBot = mapProfile(0.032, 0.16);
   ctx.strokeStyle = "#1E293B";
   ctx.lineWidth = 5;
   ctx.beginPath();
@@ -444,17 +484,21 @@ export function renderOrthographicTopPlanformCanvas(
     ctx.stroke();
   }
 
+  const L = opts.calibration.lengthM || 7.2;
+  const span = opts.calibration.wingspanM || 9.5;
+  const pxPerM = Math.min((width * 0.84) / span, (height * 0.76) / L);
+  const fusLenPx = L * pxPerM;
+  const halfSpanPx = (span * 0.5) * pxPerM;
   const cx = width * 0.5;
-  const noseY = height * 0.12;
-  const tailY = height * 0.86;
-  const fusLenPx = tailY - noseY;
-  const halfSpanPx = width * 0.42;
+  const noseY = (height - fusLenPx) * 0.48;
 
-  // Draw Left & Right Wings (Tapered Sling TSi planform)
-  const wingRootLE = noseY + fusLenPx * 0.27;
-  const wingRootTE = noseY + fusLenPx * 0.46;
-  const wingTipLE = noseY + fusLenPx * 0.31;
-  const wingTipTE = noseY + fusLenPx * 0.44;
+  // Draw Left & Right Wings (POH Section 1.3 Page 1-4: 1912mm LE, 1520mm chord, constant inner + tapered outer + raked wingtips)
+  const wingLES = (opts.calibration.wingLEStationM || 1.912) / L;
+  const wingChordRoot = (opts.calibration.wingChordRootM || 1.52) / L;
+  const wingRootLE = noseY + fusLenPx * wingLES;
+  const wingRootTE = noseY + fusLenPx * (wingLES + wingChordRoot);
+  const wingTipLE = wingRootLE + fusLenPx * 0.025;
+  const wingTipTE = wingRootTE - fusLenPx * 0.045;
 
   for (const side of [-1, 1]) {
     ctx.fillStyle = opts.zones.wingBase.colorHex;
@@ -462,55 +506,76 @@ export function renderOrthographicTopPlanformCanvas(
     ctx.lineWidth = 2.2;
     ctx.beginPath();
     ctx.moveTo(cx, wingRootLE);
-    ctx.lineTo(cx + side * halfSpanPx * 0.48, wingRootLE);
-    ctx.lineTo(cx + side * halfSpanPx, wingTipLE);
-    ctx.lineTo(cx + side * halfSpanPx, wingTipTE);
-    ctx.lineTo(cx + side * halfSpanPx * 0.48, wingRootTE);
+    ctx.lineTo(cx + side * halfSpanPx * 0.28, wingRootLE);
+    ctx.lineTo(cx + side * halfSpanPx * 0.94, wingTipLE);
+    ctx.lineTo(cx + side * halfSpanPx, wingTipLE + 4);
+    ctx.lineTo(cx + side * halfSpanPx, wingTipTE + 3);
+    ctx.lineTo(cx + side * halfSpanPx * 0.94, wingTipTE);
+    ctx.lineTo(cx + side * halfSpanPx * 0.28, wingRootTE);
     ctx.lineTo(cx, wingRootTE);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    // Colored Wingtip Zone (outer 10% of span)
+    // Colored Wingtip Zone (outer raked wingtip)
     ctx.fillStyle = opts.zones.wingtips.colorHex;
     ctx.beginPath();
-    ctx.moveTo(cx + side * halfSpanPx * 0.9, wingTipLE - 2);
-    ctx.lineTo(cx + side * halfSpanPx, wingTipLE);
-    ctx.lineTo(cx + side * halfSpanPx, wingTipTE);
-    ctx.lineTo(cx + side * halfSpanPx * 0.9, wingTipTE + 2);
+    ctx.moveTo(cx + side * halfSpanPx * 0.94, wingTipLE);
+    ctx.lineTo(cx + side * halfSpanPx, wingTipLE + 4);
+    ctx.lineTo(cx + side * halfSpanPx, wingTipTE + 3);
+    ctx.lineTo(cx + side * halfSpanPx * 0.94, wingTipTE);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
   }
 
-  // Horizontal Stabilizer
-  const hStabLE = noseY + fusLenPx * 0.86;
-  const hStabTE = noseY + fusLenPx * 0.97;
-  const hSpanPx = halfSpanPx * 0.32;
+  // Horizontal Stabilizer (POH: 3095mm span x 921mm chord)
+  const hSpanPx = ((opts.calibration.hStabSpanM || 3.095) * 0.5) * pxPerM;
+  const hChordPx = (opts.calibration.hStabChordM || 0.921) * pxPerM;
+  const hStabTE = noseY + fusLenPx * 0.98;
+  const hStabLE = hStabTE - hChordPx;
   ctx.fillStyle = opts.zones.wingBase.colorHex;
   ctx.beginPath();
-  ctx.moveTo(cx - hSpanPx, hStabLE + 10);
-  ctx.lineTo(cx + hSpanPx, hStabLE + 10);
+  ctx.moveTo(cx - hSpanPx * 0.12, hStabLE);
+  ctx.lineTo(cx + hSpanPx * 0.12, hStabLE);
+  ctx.lineTo(cx + hSpanPx, hStabLE + hChordPx * 0.22);
   ctx.lineTo(cx + hSpanPx, hStabTE);
   ctx.lineTo(cx - hSpanPx, hStabTE);
+  ctx.lineTo(cx - hSpanPx, hStabLE + hChordPx * 0.22);
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
 
-  // Fuselage Top Contour
-  ctx.fillStyle = opts.zones.fuselageBase.colorHex;
+  // Propeller in Top View
+  ctx.strokeStyle = "#1E293B";
+  ctx.lineWidth = 4;
   ctx.beginPath();
+  ctx.moveTo(cx - pxPerM * 0.86, noseY + fusLenPx * 0.025);
+  ctx.lineTo(cx + pxPerM * 0.86, noseY + fusLenPx * 0.025);
+  ctx.stroke();
+
+  // Fuselage Top Contour (exact POH halfWidth in meters * pxPerM)
+  ctx.fillStyle = opts.zones.fuselageBase.colorHex;
+  ctx.strokeStyle = "#1E293B";
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(cx, noseY);
+  ctx.lineTo(cx + 0.12 * pxPerM, noseY + (0.14 / L) * fusLenPx);
   const steps = 50;
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
+    const sM = 0.42 + t * 6.46;
     const st = evaluateSlingFuselageStation(t);
-    ctx.lineTo(cx + st.halfWidth * 115, noseY + t * fusLenPx);
+    ctx.lineTo(cx + st.halfWidth * pxPerM, noseY + (sM / L) * fusLenPx);
   }
+  ctx.lineTo(cx, noseY + fusLenPx);
   for (let i = steps; i >= 0; i--) {
     const t = i / steps;
+    const sM = 0.42 + t * 6.46;
     const st = evaluateSlingFuselageStation(t);
-    ctx.lineTo(cx - st.halfWidth * 115, noseY + t * fusLenPx);
+    ctx.lineTo(cx - st.halfWidth * pxPerM, noseY + (sM / L) * fusLenPx);
   }
+  ctx.lineTo(cx - 0.12 * pxPerM, noseY + (0.14 / L) * fusLenPx);
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
@@ -522,8 +587,8 @@ export function renderOrthographicTopPlanformCanvas(
     ctx.ellipse(
       cx,
       noseY + fusLenPx * 0.11,
-      36,
-      fusLenPx * 0.09,
+      Math.max(8, pxPerM * 0.24),
+      fusLenPx * 0.085,
       0,
       0,
       Math.PI * 2
@@ -537,7 +602,7 @@ export function renderOrthographicTopPlanformCanvas(
   ctx.ellipse(
     cx,
     noseY + fusLenPx * 0.37,
-    54,
+    Math.max(12, pxPerM * 0.42),
     fusLenPx * 0.14,
     0,
     0,

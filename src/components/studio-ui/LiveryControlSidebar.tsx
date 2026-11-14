@@ -148,19 +148,21 @@ export default function LiveryControlSidebar() {
     }
   };
 
+  const setSelected3DElement = useLiveryStore((s) => s.setSelected3DElement);
+
+  const effectiveTab =
+    activeSidePanel === "AI_COPILOT" ? "AI_COPILOT" : "PRESETS";
+
   return (
-    <aside className="w-full lg:w-[410px] h-full flex flex-col bg-slate-900 border-l border-slate-800 text-slate-100 select-none shrink-0">
-      {/* 5-Tab Navigation Bar */}
-      <div className="grid grid-cols-5 border-b border-slate-800 bg-slate-950/60 p-1 gap-1">
+    <aside className="w-full lg:w-[380px] h-full flex flex-col bg-slate-900 border-l border-slate-800 text-slate-100 select-none shrink-0">
+      {/* 2-Tab Navigation Bar (Presets & AI Prompt; component configs are inline on 3D view) */}
+      <div className="grid grid-cols-2 border-b border-slate-800 bg-slate-950/60 p-1 gap-1">
         {[
-          { id: "AI_COPILOT", label: "AI Prompt", icon: Sparkles },
-          { id: "ZONES", label: "Zones", icon: Palette },
-          { id: "STRIPES", label: "Stripes", icon: Layers },
-          { id: "REGISTRATION", label: "N-Number", icon: Stamp },
           { id: "PRESETS", label: "Presets", icon: Wand2 },
+          { id: "AI_COPILOT", label: "AI Prompt", icon: Sparkles },
         ].map((tab) => {
           const Icon = tab.icon;
-          const active = activeSidePanel === tab.id;
+          const active = effectiveTab === tab.id;
           return (
             <button
               key={tab.id}
@@ -170,23 +172,46 @@ export default function LiveryControlSidebar() {
                   tab.id as Parameters<typeof setActiveSidePanel>[0]
                 )
               }
-              className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg text-[11px] font-medium transition ${
+              className={`flex items-center justify-center gap-2 py-2 px-2 rounded-lg text-xs font-medium transition ${
                 active
                   ? "bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow"
                   : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
               }`}
             >
-              <Icon className="w-4 h-4 mb-1" />
+              <Icon className="w-4 h-4" />
               <span>{tab.label}</span>
             </button>
           );
         })}
       </div>
 
+      {/* Inline 3D Direct Manipulation Hint */}
+      <div className="px-4 py-2.5 bg-slate-950/70 border-b border-slate-800 flex items-center justify-between gap-2 text-[11px]">
+        <span className="text-slate-400">
+          Click any part, stripe, or N-Number on the 3D model to drag &amp; edit inline
+        </span>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => setSelected3DElement({ kind: "REGISTRATION" })}
+            className="px-2 py-1 rounded bg-slate-900 border border-slate-700 text-slate-200 hover:border-sky-500/50 text-[10px] font-medium"
+          >
+            N-Number
+          </button>
+          <button
+            type="button"
+            onClick={() => addStripe("FUSELAGE_TAIL")}
+            className="px-2 py-1 rounded bg-sky-500/20 border border-sky-500/40 text-sky-300 hover:bg-sky-500/30 text-[10px] font-medium"
+          >
+            + Stripe
+          </button>
+        </div>
+      </div>
+
       {/* Scrollable Panel Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
         {/* TAB 1: AI LIVERY CO-PILOT */}
-        {activeSidePanel === "AI_COPILOT" && (
+        {effectiveTab === "AI_COPILOT" && (
           <div className="space-y-4">
             <div className="p-3.5 rounded-xl bg-gradient-to-br from-sky-500/15 via-slate-900 to-indigo-500/10 border border-sky-500/30 space-y-3">
               <div className="flex items-center justify-between">

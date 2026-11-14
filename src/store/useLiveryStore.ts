@@ -15,6 +15,16 @@ import { SLING_TSI_PRESETS } from "@/data/aviationCatalog";
 
 export type ActiveWorkspaceTab = "LIVERY_STUDIO" | "BLUEPRINT_CALIBRATOR";
 
+export type Selected3DElement =
+  | {
+      kind: "ZONE";
+      zoneKey: keyof LiverySchemePreset["zones"];
+      label: string;
+    }
+  | { kind: "STRIPE"; stripeId: string }
+  | { kind: "REGISTRATION" }
+  | null;
+
 export interface GeneratedAIConcept {
   id: string;
   prompt: string;
@@ -31,6 +41,7 @@ interface LiveryStoreState {
   environmentPreset: EnvironmentPresetId;
   cameraPreset: CameraViewPreset;
   selectedStripeId: string | null;
+  selected3DElement: Selected3DElement;
   activeSidePanel: "AI_COPILOT" | "ZONES" | "STRIPES" | "REGISTRATION" | "PRESETS";
   isExportingPdf: boolean;
   textureRevision: number;
@@ -48,6 +59,7 @@ interface LiveryStoreState {
   setEnvironmentPreset: (env: EnvironmentPresetId) => void;
   setCameraPreset: (cam: CameraViewPreset) => void;
   setSelectedStripeId: (id: string | null) => void;
+  setSelected3DElement: (el: Selected3DElement) => void;
   setActiveSidePanel: (panel: LiveryStoreState["activeSidePanel"]) => void;
   setIsExportingPdf: (exporting: boolean) => void;
 
@@ -141,6 +153,7 @@ export const useLiveryStore = create<LiveryStoreState>()(
   environmentPreset: "DARK_SHOWROOM",
   cameraPreset: "FREE_ORBIT",
   selectedStripeId: DEFAULT_PRESET.stripes[0]?.id ?? null,
+  selected3DElement: null,
   activeSidePanel: "PRESETS",
   isExportingPdf: false,
   textureRevision: 1,
@@ -173,6 +186,14 @@ export const useLiveryStore = create<LiveryStoreState>()(
   setEnvironmentPreset: (environmentPreset) => set({ environmentPreset }),
   setCameraPreset: (cameraPreset) => set({ cameraPreset }),
   setSelectedStripeId: (selectedStripeId) => set({ selectedStripeId }),
+  setSelected3DElement: (selected3DElement) =>
+    set((state) => ({
+      selected3DElement,
+      selectedStripeId:
+        selected3DElement?.kind === "STRIPE"
+          ? selected3DElement.stripeId
+          : state.selectedStripeId,
+    })),
   setActiveSidePanel: (activeSidePanel) => set({ activeSidePanel }),
   setIsExportingPdf: (isExportingPdf) => set({ isExportingPdf }),
 
@@ -229,6 +250,7 @@ export const useLiveryStore = create<LiveryStoreState>()(
       return {
         stripes: [...state.stripes, newStripe],
         selectedStripeId: id,
+        selected3DElement: { kind: "STRIPE", stripeId: id },
         textureRevision: state.textureRevision + 1,
       };
     }),
@@ -250,6 +272,13 @@ export const useLiveryStore = create<LiveryStoreState>()(
           state.selectedStripeId === id
             ? (next[0]?.id ?? null)
             : state.selectedStripeId,
+        selected3DElement:
+          state.selected3DElement?.kind === "STRIPE" &&
+          state.selected3DElement.stripeId === id
+            ? next[0]
+              ? { kind: "STRIPE", stripeId: next[0].id }
+              : null
+            : state.selected3DElement,
         textureRevision: state.textureRevision + 1,
       };
     }),
@@ -272,6 +301,7 @@ export const useLiveryStore = create<LiveryStoreState>()(
       return {
         stripes: [...state.stripes, copy],
         selectedStripeId: copyId,
+        selected3DElement: { kind: "STRIPE", stripeId: copyId },
         textureRevision: state.textureRevision + 1,
       };
     }),

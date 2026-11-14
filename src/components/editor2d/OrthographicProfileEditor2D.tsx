@@ -278,12 +278,12 @@ export default function OrthographicProfileEditor2D() {
       <div className="flex items-center justify-between px-4 py-1.5 bg-slate-900/90 border-b border-slate-800 text-xs">
         <div className="flex items-center gap-3">
           <span className="font-semibold text-slate-200 tracking-wide">
-            2D ORTHOGRAPHIC BEZIER & DATUM PROFILE EDITOR (SLING 4 TSi POH)
+            2D ORTHOGRAPHIC POH PREVIEW (SLING 4 TSi)
           </span>
           <span className="text-slate-500 hidden md:inline">
             {viewSide === "TOP"
               ? "Top planform orthographic view (Wingspan & Fuselage)"
-              : `Drag control points (P0–P3) or N-Number (${registration.text}) to sculpt livery in real time`}
+              : "Live 2D POH side projection — drag & edit components directly on the 3D model"}
           </span>
         </div>
 
@@ -330,12 +330,7 @@ export default function OrthographicProfileEditor2D() {
         <svg
           ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
-          className={`w-full h-full max-h-[255px] touch-none ${
-            viewSide === "TOP" ? "cursor-default" : "cursor-crosshair"
-          }`}
-          onPointerMove={viewSide === "TOP" ? undefined : handlePointerMove}
-          onPointerUp={() => setDragTarget(null)}
-          onPointerLeave={() => setDragTarget(null)}
+          className="w-full h-full max-h-[255px] touch-none cursor-default"
         >
           <defs>
             <clipPath id="sling-fuselage-clip">
@@ -576,14 +571,7 @@ export default function OrthographicProfileEditor2D() {
                       (!isStarboard || s.symmetry)
                   )
                   .map((s) => (
-                    <g
-                      key={s.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedStripeId(s.id);
-                      }}
-                      className="cursor-pointer"
-                    >
+                    <g key={s.id}>
                       <path
                         d={buildRibbonSvgPath(s, 0)}
                         fill={s.colorHex}
@@ -652,12 +640,6 @@ export default function OrthographicProfileEditor2D() {
                 {registration.enabled && (!isStarboard || registration.symmetry) && (
                   <g
                     transform={`translate(${regPos.x}, ${regPos.y}) skewX(${-registration.slantDeg})`}
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                      (e.target as Element).setPointerCapture(e.pointerId);
-                      setDragTarget({ kind: "REGISTRATION" });
-                    }}
-                    className="cursor-move"
                   >
                     <text
                       x={0}
@@ -786,85 +768,6 @@ export default function OrthographicProfileEditor2D() {
                   strokeWidth="1.2"
                 />
               </g>
-
-              {/* Interactive Bezier Handle Overlay for Active Stripe */}
-              {activeStripe &&
-                activeStripe.targetZone === "FUSELAGE_TAIL" &&
-                (!isStarboard || activeStripe.symmetry) && (
-                  <g>
-                    {(() => {
-                      const p0 = toSvg(activeStripe.p0.x, activeStripe.p0.y);
-                      const p1 = toSvg(activeStripe.p1.x, activeStripe.p1.y);
-                      const p2 = toSvg(activeStripe.p2.x, activeStripe.p2.y);
-                      const p3 = toSvg(activeStripe.p3.x, activeStripe.p3.y);
-                      return (
-                        <>
-                          <line
-                            x1={p0.x}
-                            y1={p0.y}
-                            x2={p1.x}
-                            y2={p1.y}
-                            stroke="#38BDF8"
-                            strokeWidth="1.5"
-                            strokeDasharray="4 4"
-                          />
-                          <line
-                            x1={p2.x}
-                            y1={p2.y}
-                            x2={p3.x}
-                            y2={p3.y}
-                            stroke="#38BDF8"
-                            strokeWidth="1.5"
-                            strokeDasharray="4 4"
-                          />
-                        </>
-                      );
-                    })()}
-
-                    {(["p0", "p1", "p2", "p3"] as const).map((ptKey, idx) => {
-                      const pt = activeStripe[ptKey];
-                      const svgPt = toSvg(pt.x, pt.y);
-                      const stationMm = Math.round(
-                        pt.x * calibration.lengthM * 1000
-                      );
-                      return (
-                        <g
-                          key={ptKey}
-                          transform={`translate(${svgPt.x}, ${svgPt.y})`}
-                          onPointerDown={(e) => {
-                            e.stopPropagation();
-                            (e.target as Element).setPointerCapture(e.pointerId);
-                            setDragTarget({
-                              kind: "STRIPE_POINT",
-                              stripeId: activeStripe.id,
-                              pointKey: ptKey,
-                            });
-                          }}
-                          className="cursor-grab active:cursor-grabbing"
-                        >
-                          <circle
-                            r={10}
-                            fill="#0284C7"
-                            fillOpacity={0.25}
-                            stroke="#38BDF8"
-                            strokeWidth="2"
-                          />
-                          <circle r={4.5} fill="#F8FAFC" />
-                          <text
-                            y={-14}
-                            fill="#7DD3FC"
-                            fontSize="10"
-                            fontWeight="bold"
-                            textAnchor="middle"
-                            fontFamily="monospace"
-                          >
-                            P{idx} ({stationMm}mm)
-                          </text>
-                        </g>
-                      );
-                    })}
-                  </g>
-                )}
             </>
           )}
         </svg>

@@ -6,8 +6,12 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { useLiveryStore } from "@/store/useLiveryStore";
 import { buildSlingTsiGeometry } from "@/engine/slingTsiGeometry";
-import { renderCompositedLiveryTextures } from "@/engine/liveryCompositor";
+import {
+  evalBezierPoint,
+  renderCompositedLiveryTextures,
+} from "@/engine/liveryCompositor";
 import { FINISH_PRESETS } from "@/data/aviationCatalog";
+import Inline3DInspector from "@/components/canvas3d/Inline3DInspector";
 import { EnvironmentPresetId } from "@/types/livery";
 
 const ENV_CONFIG: Record<
@@ -100,6 +104,10 @@ export default function SlingTsiViewport3D({
   const registration = useLiveryStore((s) => s.registration);
   const decals = useLiveryStore((s) => s.decals);
   const textureRevision = useLiveryStore((s) => s.textureRevision);
+  const selected3DElement = useLiveryStore((s) => s.selected3DElement);
+  const setSelected3DElement = useLiveryStore((s) => s.setSelected3DElement);
+  const updateStripe = useLiveryStore((s) => s.updateStripe);
+  const updateRegistration = useLiveryStore((s) => s.updateRegistration);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -107,9 +115,22 @@ export default function SlingTsiViewport3D({
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const aircraftGroupRef = useRef<THREE.Group | null>(null);
+  const gizmoGroupRef = useRef<THREE.Group | null>(null);
   const propMeshRef = useRef<THREE.Mesh | null>(null);
   const gridHelperRef = useRef<THREE.GridHelper | null>(null);
   const shadowPlaneRef = useRef<THREE.Mesh | null>(null);
+
+  const drag3DRef = useRef<
+    | { kind: "REGISTRATION"; planeZ: number }
+    | {
+        kind: "STRIPE_POINT";
+        stripeId: string;
+        pointKey: "p0" | "p1" | "p2" | "p3";
+        planeZ: number;
+      }
+    | null
+  >(null);
+  const pointerDownPosRef = useRef<{ x: number; y: number } | null>(null);
 
   const ambientLightRef = useRef<THREE.AmbientLight | null>(null);
   const keyLightRef = useRef<THREE.DirectionalLight | null>(null);
@@ -227,6 +248,10 @@ export default function SlingTsiViewport3D({
     const aircraftGroup = new THREE.Group();
     scene.add(aircraftGroup);
     aircraftGroupRef.current = aircraftGroup;
+
+    const gizmoGroup = new THREE.Group();
+    scene.add(gizmoGroup);
+    gizmoGroupRef.current = gizmoGroup;
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -555,20 +580,237 @@ export default function SlingTsiViewport3D({
     controls.update();
   }, [cameraPreset]);
 
+  // Build interactive 3D gizmos (Registration handle + Selected Stripe P0-P3 spheres) on the fuselage skin
+  useEffect(() => {
+    const gizmoGroup = gizmoGroupRef.current;
+    const aircraftGroup = aircraftGroupRef.current;
+    if (!gizmoGroup || !aircraftGroup) return;
+
+    while (gizmoGroup.children.length > 0) {
+      const child = gizmoGroup.children[0];
+      gizmoGroup.remove(child);
+      if (child instanceof THREE.Mesh || child instanceof THREE.Line) {
+        child.geometry.dispose();
+        if (Array.isArray(child.material)) {
+          child.material.forEach((m) => m.dispose());
+        } else {
+          child.material.dispose();
+        }
+      }
+    }
+
+    const fuselageMeshes = aircraftGroup.children.filter(
+      (c) => c.name === "Fuselage & Tail" || c.name === "Rudder"
+    );
+    const { xMin, xMax, yMin, yMax } = meshParts.bounds;
+    const rc = new THREE.Raycaster();
+
+    const snapToSkin = (uNorm: number, vNorm: number, sideSign: 1 | -1) => {
+      const x = xMin + uNorm * (xMax - xMin);
+      const y = yMin + vNorm * (yMax - yMin);
+      rc.set(
+        new THREE.Vector3(x, y, sideSign * 2.5),
+        new THREE.Vector3(0, 0, -sideSign)
+      );
+      const hits = rc.intersectObjects(fuselageMeshes, false);
+      if (hits.length > 0) {
+        return new THREE.Vector3(
+          hits[0].point.x,
+          hits[0].point.y,
+          hits[0].point.z + sideSign * 0.04
+        );
+      }
+      return new THREE.Vector3(x, y, sideSign * 0.52);
+    };
+
+    // 1. Registration 3D Drag Handle
+    if (registration.enabled) {
+      const isRegSelected = selected3DElement?.kind === "REGISTRATION";
+      const sides: (1 | -1)[] = registration.symmetry ? [1, -1] : [1];
+      for (const sideSign of sides) {
+        const pos = snapToSkin(
+          registration.positionX,
+          registration.positionY,
+          sideSign
+        );
+        const geo = new THREE.SphereGeometry(
+          isRegSelected ? 0.085 : 0.055,
+          16,
+          16
+        );
+        const mat = new THREE.MeshBasicMaterial({
+          color: isRegSelected ? "#38BDF8" : "#F59E0B",
+          transparent: true,
+          opacity: isRegSelected ? 0.95 : 0.72,
+          depthTest: false,
+        });
+        const handle = new THREE.Mesh(geo, mat);
+        handle.position.copy(pos);
+        handle.renderOrder = 999;
+        handle.userData = { dragKind: "REGISTRATION", planeZ: pos.z };
+        gizmoGroup.add(handle);
+      }
+    }
+
+    // 2. Selected Stripe 3D Bezier Control Points (P0..P3)
+    if (selected3DElement?.kind === "STRIPE") {
+      const activeStripe = stripes.find(
+        (s) => s.id === selected3DElement.stripeId
+      );
+      if (activeStripe && activeStripe.targetZone === "FUSELAGE_TAIL") {
+        const sides: (1 | -1)[] = activeStripe.symmetry ? [1, -1] : [1];
+        for (const sideSign of sides) {
+          const pts = (["p0", "p1", "p2", "p3"] as const).map((ptKey) => ({
+            ptKey,
+            pos: snapToSkin(
+              activeStripe[ptKey].x,
+              activeStripe[ptKey].y,
+              sideSign
+            ),
+          }));
+
+          // Tangent lines P0-P1 and P2-P3
+          for (const [a, b] of [
+            [pts[0].pos, pts[1].pos],
+            [pts[2].pos, pts[3].pos],
+          ]) {
+            const lineGeo = new THREE.BufferGeometry().setFromPoints([a, b]);
+            const lineMat = new THREE.LineBasicMaterial({
+              color: "#38BDF8",
+              transparent: true,
+              opacity: 0.75,
+              depthTest: false,
+            });
+            const line = new THREE.Line(lineGeo, lineMat);
+            line.renderOrder = 998;
+            gizmoGroup.add(line);
+          }
+
+          for (const { ptKey, pos } of pts) {
+            const sphereGeo = new THREE.SphereGeometry(0.068, 16, 16);
+            const sphereMat = new THREE.MeshBasicMaterial({
+              color:
+                ptKey === "p0" || ptKey === "p3" ? "#38BDF8" : "#A855F7",
+              transparent: true,
+              opacity: 0.95,
+              depthTest: false,
+            });
+            const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+            sphere.position.copy(pos);
+            sphere.renderOrder = 999;
+            sphere.userData = {
+              dragKind: "STRIPE_POINT",
+              stripeId: activeStripe.id,
+              pointKey: ptKey,
+              planeZ: pos.z,
+            };
+            gizmoGroup.add(sphere);
+          }
+        }
+      }
+    }
+  }, [
+    meshParts,
+    selected3DElement,
+    stripes,
+    registration.enabled,
+    registration.positionX,
+    registration.positionY,
+    registration.symmetry,
+  ]);
+
+  const getNdcMouse = (e: React.PointerEvent<HTMLDivElement>) => {
+    const container = containerRef.current!;
+    const rect = container.getBoundingClientRect();
+    return new THREE.Vector2(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1
+    );
+  };
+
+  const pointToNorm = (pt: THREE.Vector3) => {
+    const { xMin, xMax, yMin, yMax } = meshParts.bounds;
+    const uNorm = Math.max(0.01, Math.min(0.99, (pt.x - xMin) / (xMax - xMin)));
+    const vNorm = Math.max(0.02, Math.min(0.98, (pt.y - yMin) / (yMax - yMin)));
+    return { x: Number(uNorm.toFixed(3)), y: Number(vNorm.toFixed(3)) };
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const container = containerRef.current;
+    const camera = cameraRef.current;
+    const gizmoGroup = gizmoGroupRef.current;
+    if (!container || !camera || !gizmoGroup) return;
+
+    const mouse = getNdcMouse(e);
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(mouse, camera);
+
+    const gizmoHits = raycaster.intersectObjects(gizmoGroup.children, false);
+    const firstHandle = gizmoHits.find((h) => h.object.userData?.dragKind);
+    if (firstHandle) {
+      const ud = firstHandle.object.userData;
+      if (ud.dragKind === "REGISTRATION") {
+        drag3DRef.current = { kind: "REGISTRATION", planeZ: ud.planeZ ?? 0.5 };
+        setSelected3DElement({ kind: "REGISTRATION" });
+      } else if (ud.dragKind === "STRIPE_POINT") {
+        drag3DRef.current = {
+          kind: "STRIPE_POINT",
+          stripeId: ud.stripeId,
+          pointKey: ud.pointKey,
+          planeZ: ud.planeZ ?? 0.5,
+        };
+        setSelected3DElement({ kind: "STRIPE", stripeId: ud.stripeId });
+      }
+      if (controlsRef.current) controlsRef.current.enabled = false;
+      (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+      return;
+    }
+
+    pointerDownPosRef.current = { x: e.clientX, y: e.clientY };
+  };
+
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const container = containerRef.current;
     const camera = cameraRef.current;
     const group = aircraftGroupRef.current;
     if (!container || !camera || !group) return;
 
-    const rect = container.getBoundingClientRect();
-    const mouse = new THREE.Vector2(
-      ((e.clientX - rect.left) / rect.width) * 2 - 1,
-      -((e.clientY - rect.top) / rect.height) * 2 + 1
-    );
-
+    const mouse = getNdcMouse(e);
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(mouse, camera);
+
+    // Active 3D drag of Registration or Stripe Control Point
+    if (drag3DRef.current) {
+      const fuselageMeshes = group.children.filter(
+        (c) => c.name === "Fuselage & Tail" || c.name === "Rudder"
+      );
+      const hits = raycaster.intersectObjects(fuselageMeshes, false);
+      let hitPt: THREE.Vector3 | null = hits.length > 0 ? hits[0].point : null;
+
+      if (!hitPt) {
+        const plane = new THREE.Plane(
+          new THREE.Vector3(0, 0, 1),
+          -drag3DRef.current.planeZ
+        );
+        const fallback = new THREE.Vector3();
+        if (raycaster.ray.intersectPlane(plane, fallback)) {
+          hitPt = fallback;
+        }
+      }
+
+      if (hitPt) {
+        const norm = pointToNorm(hitPt);
+        if (drag3DRef.current.kind === "REGISTRATION") {
+          updateRegistration({ positionX: norm.x, positionY: norm.y });
+        } else if (drag3DRef.current.kind === "STRIPE_POINT") {
+          updateStripe(drag3DRef.current.stripeId, {
+            [drag3DRef.current.pointKey]: norm,
+          });
+        }
+      }
+      return;
+    }
+
     const hits = raycaster.intersectObjects(group.children, false);
     if (hits.length > 0) {
       const pt = hits[0].point;
@@ -583,11 +825,141 @@ export default function SlingTsiViewport3D({
     }
   };
 
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (drag3DRef.current) {
+      drag3DRef.current = null;
+      if (controlsRef.current) controlsRef.current.enabled = true;
+      return;
+    }
+
+    const down = pointerDownPosRef.current;
+    pointerDownPosRef.current = null;
+    if (!down) return;
+    if (Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) return;
+
+    const camera = cameraRef.current;
+    const group = aircraftGroupRef.current;
+    if (!camera || !group) return;
+
+    const mouse = getNdcMouse(e);
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(group.children, false);
+    if (hits.length === 0) {
+      setSelected3DElement(null);
+      return;
+    }
+
+    const hit = hits[0];
+    const name = hit.object.name;
+
+    if (name === "Fuselage & Tail" || name === "Rudder") {
+      const norm = pointToNorm(hit.point);
+      const isPortSide = hit.point.z >= 0;
+
+      // Check proximity to Registration N-Number
+      if (
+        registration.enabled &&
+        (isPortSide || registration.symmetry) &&
+        Math.abs(norm.x - registration.positionX) < 0.08 &&
+        Math.abs(norm.y - registration.positionY) < 0.06
+      ) {
+        setSelected3DElement({ kind: "REGISTRATION" });
+        return;
+      }
+
+      // Check proximity to any visible Fuselage Stripe
+      let closestStripeId: string | null = null;
+      let bestDist = 0.045;
+      for (const s of stripes) {
+        if (!s.visible || s.targetZone !== "FUSELAGE_TAIL") continue;
+        if (!isPortSide && !s.symmetry) continue;
+        for (let i = 0; i <= 24; i++) {
+          const pt = evalBezierPoint(s.p0, s.p1, s.p2, s.p3, i / 24);
+          const d = Math.hypot(norm.x - pt.x, norm.y - pt.y);
+          if (d < bestDist) {
+            bestDist = d;
+            closestStripeId = s.id;
+          }
+        }
+      }
+      if (closestStripeId) {
+        setSelected3DElement({ kind: "STRIPE", stripeId: closestStripeId });
+        return;
+      }
+
+      if (norm.x > 0.72 && norm.y > 0.48) {
+        setSelected3DElement({
+          kind: "ZONE",
+          zoneKey: "verticalTail",
+          label: "Vertical Stabilizer & Rudder",
+        });
+      } else if (
+        calibration.antiGlareMaskEnabled &&
+        norm.x < 0.25 &&
+        norm.y > 0.44
+      ) {
+        setSelected3DElement({
+          kind: "ZONE",
+          zoneKey: "cowlingAntiGlare",
+          label: "Nose Cowling Anti-Glare Panel",
+        });
+      } else {
+        setSelected3DElement({
+          kind: "ZONE",
+          zoneKey: "fuselageBase",
+          label: "Fuselage & Tailcone Skin",
+        });
+      }
+      return;
+    }
+
+    if (
+      name === "Main Wing" ||
+      name === "Flaps" ||
+      name === "Ailerons" ||
+      name === "Horizontal Stabilizer" ||
+      name === "Elevators & Trim Tab"
+    ) {
+      setSelected3DElement({
+        kind: "ZONE",
+        zoneKey: "wingBase",
+        label: "Main Wings & Horizontal Stab",
+      });
+    } else if (name === "Winglets & H-Stab Tips") {
+      setSelected3DElement({
+        kind: "ZONE",
+        zoneKey: "wingtips",
+        label: "Composite Upturned Wingtips",
+      });
+    } else if (name === "wheelPants" || name === "gearLegsPainted") {
+      setSelected3DElement({
+        kind: "ZONE",
+        zoneKey: "wheelPants",
+        label: "Wheel Fairings (Spats)",
+      });
+    } else if (name === "spinner") {
+      setSelected3DElement({
+        kind: "ZONE",
+        zoneKey: "spinner",
+        label: "Propeller Spinner Cone",
+      });
+    }
+  };
+
   return (
     <div
       className="relative w-full h-full select-none overflow-hidden bg-slate-950"
+      onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
-      onPointerLeave={() => setHoverStation(null)}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={() => {
+        setHoverStation(null);
+        if (drag3DRef.current) {
+          drag3DRef.current = null;
+          if (controlsRef.current) controlsRef.current.enabled = true;
+        }
+      }}
     >
       <div ref={containerRef} className="w-full h-full" />
 
@@ -636,6 +1008,9 @@ export default function SlingTsiViewport3D({
           {registration.text}
         </div>
       </div>
+
+      {/* Inline Floating 3D Component Inspector */}
+      <Inline3DInspector />
     </div>
   );
 }
